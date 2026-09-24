@@ -25,6 +25,7 @@ uv run pyright                           # type check (standard mode)
 uv run ruff check . && uv run ruff format --check .
 ```
 
+- **Pydantic classes live in a `models/` package inside the layer they belong to,** e.g. `tillhand/ucp/models/` for UCP wire models. Each layer's shapes stay separate (wire shapes apart from database rows), and non-model code (interfaces like `ucp/service.py`, builders, checks) sits beside `models/`, not in it. Callers import from the layer's package (`from tillhand.ucp import Product`), never from `models` directly.
 - **The UCP spec is vendored** at `vendor/ucp/v2026-08-25/`: official schemas, catalog docs and scaffolds. Tests validate our models against it (`tests/ucp/spec.py`). **Never edit it**; to move to a new UCP version, vendor that version alongside and change `UCP_VERSION`.
 - **Extension names** live only in `src/tillhand/ucp/extensions.py`, derived from the TillHand site URL. They are `app.vercel.tillhand.{service}.{capability}`, and their schemas must be served from `https://tillhand.vercel.app`, or Platforms silently drop them. `tests/ucp/test_namespace.py` enforces this with the spec's own check.
 

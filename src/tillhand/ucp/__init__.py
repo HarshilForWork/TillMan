@@ -1,10 +1,18 @@
 """TillHand's UCP `2026-08-25` contract layer: the wire types, our Extensions, and error building."""
 
-from .catalog import (
+from .errors import UPSTREAM_TIMEOUT, business_error, timeout_error
+from .extensions import (
+    EXTENSION_AUTHORITY,
+    EXTENSIONS,
+    REFUND_REQUEST,
+    SUGGESTIONS,
+    TILLHAND_SITE,
+    Extension,
+)
+from .models.catalog import (
     EACH,
     Availability,
     Barcode,
-    CatalogService,
     Category,
     DetailOptionValue,
     DetailProduct,
@@ -37,7 +45,7 @@ from .catalog import (
     UnitPrice,
     Variant,
 )
-from .common import (
+from .models.common import (
     ActionInstance,
     Actions,
     Amount,
@@ -69,16 +77,8 @@ from .common import (
     Url,
     ucp_dump,
 )
-from .errors import UPSTREAM_TIMEOUT, business_error, timeout_error
-from .extensions import (
-    EXTENSION_AUTHORITY,
-    EXTENSIONS,
-    REFUND_REQUEST,
-    SUGGESTIONS,
-    TILLHAND_SITE,
-    Extension,
-)
 from .namespace import schema_authority_matches
+from .service import CatalogService
 from .version import UCP_VERSION
 
 __all__ = [

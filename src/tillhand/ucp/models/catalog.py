@@ -4,7 +4,7 @@ Requests are `Open` (Platforms may send fields we don't use); everything we retu
 The tool arguments wrap the request under `catalog`, next to the `meta` every MCP call carries.
 """
 
-from typing import Annotated, Protocol, Self
+from typing import Annotated, Self
 
 from pydantic import Field, model_validator
 
@@ -17,7 +17,6 @@ from .common import (
     Context,
     CurrencyCode,
     Description,
-    ErrorResponse,
     Link,
     Media,
     Message,
@@ -291,22 +290,3 @@ class LookupCatalogArguments(Open):
 class GetProductArguments(Open):
     meta: RequestMeta
     catalog: GetProductRequest
-
-
-class CatalogService(Protocol):
-    """The three UCP catalog tools, by their UCP names. Implemented over Neon by the catalog data layer.
-
-    What counts as a "no" differs per tool (catalog/mcp.md):
-    - `search_catalog`: nothing matching is an empty `products` list, not an error.
-    - `lookup_catalog` MUST succeed for unknown ids: they just produce fewer products, optionally
-      with an informational `not_found` message.
-    - `get_product`: an unknown id is an `ErrorResponse` (`not_found`).
-
-    An `ErrorResponse` is also how any tool reports a step that ran out of time (`timeout_error`).
-    """
-
-    async def search_catalog(self, arguments: SearchCatalogArguments) -> SearchResponse | ErrorResponse: ...
-
-    async def lookup_catalog(self, arguments: LookupCatalogArguments) -> LookupResponse | ErrorResponse: ...
-
-    async def get_product(self, arguments: GetProductArguments) -> GetProductResponse | ErrorResponse: ...

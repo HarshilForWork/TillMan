@@ -5,7 +5,7 @@ result carrying `ucp.status: "error"` and `messages[]`. Only protocol failures (
 malformed call) are JSON-RPC errors, and those don't go through here.
 """
 
-from .common import ErrorResponse, MessageError, Severity, UcpResponseMeta
+from .models.common import ErrorResponse, MessageError, Severity, UcpResponseMeta
 from .version import UCP_VERSION
 
 UPSTREAM_TIMEOUT = "upstream_timeout"
