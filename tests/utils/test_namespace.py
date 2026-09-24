@@ -1,13 +1,12 @@
 """The namespace authority check from UCP's overview (Authority Binding, derivation algorithm).
 
-A Platform silently drops any capability whose schema host fails this check, so ours must pass it.
+A Platform silently drops any capability whose schema host fails this check; see tests/core for ours.
 """
 
 import pytest
 
-from tillhand.ucp import EXTENSION_AUTHORITY, EXTENSIONS, TILLHAND_SITE, Extension, schema_authority_matches
-
-from .spec import authority_table
+from tests.support.ucp_spec import authority_table
+from tillhand.utils.namespace import schema_authority_matches, url_authority
 
 
 # The spec's own table, read from the vendored overview rather than copied here.
@@ -35,24 +34,10 @@ def test_host_is_normalised_before_matching() -> None:
     assert schema_authority_matches("com.example.pay", "https://EXAMPLE.com.:8443/x.json") is True
 
 
-@pytest.mark.parametrize("extension", EXTENSIONS, ids=lambda e: e.name)
-def test_our_extensions_pass_the_check_platforms_apply(extension: Extension) -> None:
-    assert schema_authority_matches(extension.name, extension.schema_url)
-
-
-@pytest.mark.parametrize("extension", EXTENSIONS, ids=lambda e: e.name)
-def test_our_extensions_follow_the_naming_convention(extension: Extension) -> None:
-    # {reverse-domain}.{service}.{capability}, and it attaches to a UCP parent capability.
-    assert extension.name.startswith(f"{EXTENSION_AUTHORITY}.")
-    service, _, capability = extension.name.removeprefix(f"{EXTENSION_AUTHORITY}.").partition(".")
-    assert service == "shopping" and capability and "." not in capability
-    assert extension.extends.startswith("dev.ucp.shopping.")
-
-
 def test_spec_table_was_found() -> None:
     assert len(authority_table()) == 9
 
 
-def test_the_namespace_is_the_tillhand_sites_host_reversed() -> None:
-    assert TILLHAND_SITE == "https://tillhand.vercel.app"
-    assert EXTENSION_AUTHORITY == "app.vercel.tillhand"
+def test_url_authority_reverses_the_host() -> None:
+    assert url_authority("https://tillhand.vercel.app/schemas/x.json") == "app.vercel.tillhand"
+    assert url_authority("http://tillhand.vercel.app/x.json") is None

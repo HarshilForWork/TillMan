@@ -17,7 +17,7 @@ from typing import Any
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 
-from tillhand.ucp import UCP_VERSION
+from tillhand.core.constants import UCP_VERSION
 
 SPEC_ROOT = Path(__file__).resolve().parents[2] / "vendor" / "ucp" / f"v{UCP_VERSION}"
 SCHEMA_ROOT = SPEC_ROOT / "source" / "schemas"

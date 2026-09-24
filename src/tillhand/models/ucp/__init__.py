@@ -1,15 +1,6 @@
-"""TillHand's UCP `2026-08-25` contract layer: the wire types, our Extensions, and error building."""
+"""UCP `2026-08-25` wire models: what goes over MCP, validated against the vendored spec in tests."""
 
-from .errors import UPSTREAM_TIMEOUT, business_error, timeout_error
-from .extensions import (
-    EXTENSION_AUTHORITY,
-    EXTENSIONS,
-    REFUND_REQUEST,
-    SUGGESTIONS,
-    TILLHAND_SITE,
-    Extension,
-)
-from .models.catalog import (
+from .catalog import (
     EACH,
     Availability,
     Barcode,
@@ -45,12 +36,15 @@ from .models.catalog import (
     UnitPrice,
     Variant,
 )
-from .models.common import (
+from .common import (
+    MAX_SAFE_INTEGER,
     ActionInstance,
     Actions,
     Amount,
     Attribution,
     CapabilityEntry,
+    Closed,
+    ContentType,
     Context,
     CurrencyCode,
     Description,
@@ -62,6 +56,7 @@ from .models.common import (
     MessageError,
     MessageInfo,
     MessageWarning,
+    Open,
     OpenObject,
     PaginationRequest,
     PaginationResponse,
@@ -74,22 +69,14 @@ from .models.common import (
     Severity,
     Signals,
     UcpResponseMeta,
+    UcpVersion,
     Url,
     ucp_dump,
 )
-from .namespace import schema_authority_matches
-from .service import CatalogService
-from .version import UCP_VERSION
 
 __all__ = [
     "EACH",
-    "EXTENSIONS",
-    "EXTENSION_AUTHORITY",
-    "REFUND_REQUEST",
-    "SUGGESTIONS",
-    "TILLHAND_SITE",
-    "UCP_VERSION",
-    "UPSTREAM_TIMEOUT",
+    "MAX_SAFE_INTEGER",
     "ActionInstance",
     "Actions",
     "Amount",
@@ -97,8 +84,9 @@ __all__ = [
     "Availability",
     "Barcode",
     "CapabilityEntry",
-    "CatalogService",
     "Category",
+    "Closed",
+    "ContentType",
     "Context",
     "CurrencyCode",
     "Description",
@@ -107,7 +95,6 @@ __all__ = [
     "DetailProductOption",
     "Entity",
     "ErrorResponse",
-    "Extension",
     "GetProductArguments",
     "GetProductRequest",
     "GetProductResponse",
@@ -124,6 +111,7 @@ __all__ = [
     "MessageError",
     "MessageInfo",
     "MessageWarning",
+    "Open",
     "OpenObject",
     "OptionValue",
     "PaginationRequest",
@@ -150,12 +138,10 @@ __all__ = [
     "Signals",
     "UcpAgent",
     "UcpResponseMeta",
+    "UcpVersion",
     "Unit",
     "UnitPrice",
     "Url",
     "Variant",
-    "business_error",
-    "schema_authority_matches",
-    "timeout_error",
     "ucp_dump",
 ]

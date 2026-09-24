@@ -1,26 +1,25 @@
-"""TillHand's Extensions: capabilities we add where UCP has none.
+"""Project-wide constants: the UCP version we conform to, and TillHand's Extensions.
 
-Their names are the TillHand site's host with its labels reversed, then `{service}.{capability}`
+Extension names are the TillHand site's host with its labels reversed, then `{service}.{capability}`
 (UCP's naming convention). Platforms silently drop any Extension whose schema is served from a host
 that doesn't match its name, so the namespace is derived from the site's URL rather than written
 out a second time, and every Extension's schema lives under that site.
 """
 
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+
+from tillhand.utils.namespace import url_authority
+
+UCP_VERSION = "2026-08-25"
+"""The UCP version we conform to. The vendored spec under `vendor/ucp/v{UCP_VERSION}/` must match."""
 
 TILLHAND_SITE = "https://tillhand.vercel.app"
 EXTENSIONS_VERSION = "2026-09-24"
 
-
-def _reversed_host(url: str) -> str:
-    host = urlsplit(url).hostname
-    if not host:
-        raise ValueError(f"{url!r} has no host")
-    return ".".join(reversed(host.split(".")))
-
-
-EXTENSION_AUTHORITY = _reversed_host(TILLHAND_SITE)
+_authority = url_authority(TILLHAND_SITE)
+if _authority is None:
+    raise RuntimeError(f"TILLHAND_SITE {TILLHAND_SITE!r} cannot serve UCP schemas")
+EXTENSION_AUTHORITY: str = _authority
 
 
 @dataclass(frozen=True)

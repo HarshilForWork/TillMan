@@ -5,7 +5,8 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from tillhand.ucp import (
+from tests.support.ucp_spec import SpecExample, catalog_doc_examples, scaffold, schema_errors
+from tillhand.models.ucp import (
     ErrorResponse,
     GetProductRequest,
     GetProductResponse,
@@ -14,8 +15,6 @@ from tillhand.ucp import (
     SearchRequest,
     SearchResponse,
 )
-
-from .spec import SpecExample, catalog_doc_examples, scaffold, schema_errors
 
 # (schema, op, direction) -> (our model, the schema $def it must satisfy)
 CONTRACTS: dict[tuple[str, str, str], tuple[type[BaseModel], str | None]] = {

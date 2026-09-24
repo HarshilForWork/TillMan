@@ -1,8 +1,9 @@
-"""The interface the UCP catalog tools call. The catalog data layer implements it over Neon."""
+"""The catalog service: what the UCP catalog tools call. Implemented over Neon by the catalog data layer."""
 
 from typing import Protocol
 
-from .models.catalog import (
+from tillhand.models.ucp import (
+    ErrorResponse,
     GetProductArguments,
     GetProductResponse,
     LookupCatalogArguments,
@@ -10,7 +11,6 @@ from .models.catalog import (
     SearchCatalogArguments,
     SearchResponse,
 )
-from .models.common import ErrorResponse
 
 
 class CatalogService(Protocol):

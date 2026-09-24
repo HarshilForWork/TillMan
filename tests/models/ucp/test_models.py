@@ -5,8 +5,9 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from tillhand.ucp import (
-    UCP_VERSION,
+from tests.support.ucp_spec import schema_errors
+from tillhand.core.constants import UCP_VERSION
+from tillhand.models.ucp import (
     Availability,
     CapabilityEntry,
     Category,
@@ -28,12 +29,8 @@ from tillhand.ucp import (
     UcpResponseMeta,
     UnitPrice,
     Variant,
-    business_error,
-    timeout_error,
     ucp_dump,
 )
-
-from .spec import schema_errors
 
 
 def inr(paise: int) -> Price:
@@ -138,28 +135,6 @@ def test_messages_are_told_apart_by_type() -> None:
     )
     assert isinstance(response.messages[0], MessageError)
     assert isinstance(response.messages[1], MessageInfo)
-
-
-def test_business_error_is_a_ucp_error_response() -> None:
-    error = business_error(
-        code="out_of_stock",
-        content="Niacinamide Serum 50ml is out of stock.",
-        severity="recoverable",
-        continue_url="https://shop.example/products/serum",
-    )
-    payload = ucp_dump(error)
-    assert payload["ucp"] == {"version": UCP_VERSION, "status": "error"}
-    assert payload["messages"][0]["code"] == "out_of_stock"
-    assert schema_errors(payload, "common/types/error_response") == []
-
-
-def test_timeout_error_names_the_step_that_overran() -> None:
-    payload = ucp_dump(timeout_error("embedding.query"))
-    message = payload["messages"][0]
-    assert message["code"] == "upstream_timeout"
-    assert message["severity"] == "recoverable"
-    assert "embedding.query" in message["content"]
-    assert schema_errors(payload, "common/types/error_response") == []
 
 
 @pytest.mark.parametrize("url", ["not a url", "/relative/path.jpg", "cdn.example.com/x.jpg"])

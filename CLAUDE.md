@@ -15,19 +15,41 @@ A product that gives D2C Merchants their own agent-ready store. **Each Merchant 
 
 ## Repository state
 
-**Early code.** A uv project with a `src/tillhand/` layout (Python 3.11). So far it contains only the UCP contract layer, `tillhand.ucp`: the wire types for UCP `2026-08-25`, our Extensions, and the error builders. There's no server, database or payments code yet.
+**Early code.** A uv project with a `src/` layout (Python 3.11). So far it holds the UCP wire models (UCP `2026-08-25`), the project constants and Extensions, the error builders, and the catalog service interface. There's no server, database or payments code yet.
 
 ```bash
-uv sync                                  # install from uv.lock
-uv run pytest -q                         # full suite
-uv run pytest tests/ucp/test_models.py   # a single file
-uv run pyright                           # type check (standard mode)
+uv sync                                         # install from uv.lock
+uv run pytest -q                                # full suite
+uv run pytest tests/models/ucp/test_models.py   # a single file
+uv run pyright                                  # type check (standard mode)
 uv run ruff check . && uv run ruff format --check .
 ```
 
-- **Pydantic classes live in a `models/` package inside the layer they belong to,** e.g. `tillhand/ucp/models/` for UCP wire models. Each layer's shapes stay separate (wire shapes apart from database rows), and non-model code (interfaces like `ucp/service.py`, builders, checks) sits beside `models/`, not in it. Callers import from the layer's package (`from tillhand.ucp import Product`), never from `models` directly.
-- **The UCP spec is vendored** at `vendor/ucp/v2026-08-25/`: official schemas, catalog docs and scaffolds. Tests validate our models against it (`tests/ucp/spec.py`). **Never edit it**; to move to a new UCP version, vendor that version alongside and change `UCP_VERSION`.
-- **Extension names** live only in `src/tillhand/ucp/extensions.py`, derived from the TillHand site URL. They are `app.vercel.tillhand.{service}.{capability}`, and their schemas must be served from `https://tillhand.vercel.app`, or Platforms silently drop them. `tests/ucp/test_namespace.py` enforces this with the spec's own check.
+### Code layout (layer-based; agreed 24 Sep 2026)
+
+```text
+src/tillhand/
+  main.py          app factory: FastAPI + the MCP server; one DB pool and one httpx2 client at startup
+  core/            app-wide plumbing, no business logic: constants.py, errors.py, config, deadlines
+  api/             ALL endpoints, nothing else: mcp/ (tools under UCP names, both doors), routes/ (FastAPI)
+  models/          ALL Pydantic classes: ucp/ (wire), domain/ (our Product/Order/...), db/ (rows)
+  services/        business logic, the functions defined once and wrapped by every door (ADR-0001)
+  integrations/    the ONLY code that leaves the process: neon/ (pool + all SQL), razorpay/, pinecone.py,
+                   prompt_guard.py
+  utils/           small helpers that know nothing about the business
+src/tillhand_agent/  the Harness, a separate package that reaches the server only over HTTP
+tests/             mirrors src/ (tests/models/ucp/, tests/core/, ...); shared fixtures in tests/support/
+evals/  data/seeds/  scripts/  web/site/ (TillHand site)  web/storefront/ (Demo Merchant)  vendor/
+```
+
+Folders are created when their first code lands, not before. The rules that make the layout work:
+
+- **Dependencies point one way:** `api → services → integrations`. Everything may import `models`, `core` and `utils`, and **nothing imports `api`**. `tillhand_agent` never imports `tillhand`.
+- **`integrations/` is the only door out of the process,** whether Neon, Razorpay, Pinecone or model inference. It's the seam where evals swap in fakes (Razorpay mocked, recorded embedding vectors), and the one place to check the risky rules: no DB connection held across slow work, a timeout on every call, retries only when a call is safe to repeat, and **never Razorpay's refund API**.
+- **`utils/` stays harmless.** If a helper mentions a Merchant, an Order or any business rule, it belongs in `services/`.
+- **Import models from their subpackage:** `from tillhand.models.ucp import Product`, never from the module file inside it.
+- **The UCP spec is vendored** at `vendor/ucp/v2026-08-25/`: official schemas, catalog and overview docs, and scaffolds. Tests validate our models against it (`tests/support/ucp_spec.py`). **Never edit it**; to move to a new UCP version, vendor that version alongside and change `UCP_VERSION` in `core/constants.py`.
+- **Extension names** live only in `core/constants.py`, derived from the TillHand site URL. They are `app.vercel.tillhand.{service}.{capability}`, and their schemas must be served from `https://tillhand.vercel.app`, or Platforms silently drop them. `tests/core/test_constants.py` enforces this with the spec's own check.
 
 Intended stack, from the plan and `.env.example`: Python (async throughout), the `mcp` SDK over streamable HTTP, FastAPI for non-MCP endpoints, Pydantic v2 at every boundary, Neon Postgres with pgvector, the Razorpay REST API (test mode), Prompt Guard 2 on CPU via `torch`, DeepEval for evals, Docker on Railway.
 
