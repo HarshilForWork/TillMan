@@ -1,6 +1,6 @@
 # TillHand
 
-An agentic-commerce layer for a D2C merchant: a machine-legible catalog plus a guarded agent harness that lets an AI agent browse and buy on a customer's behalf, within bounds the customer actually agreed to.
+A product that gives each D2C Merchant its own agent-ready store: a machine-legible catalog plus guarded, server-side authority that lets an AI agent browse and buy on a Customer's behalf, within bounds the Customer actually agreed to.
 
 ## Language
 
@@ -45,6 +45,32 @@ _Avoid_: User, client, buyer, account
 **Merchant**:
 A D2C brand whose catalog TillHand exposes. Each Merchant gets its own deployment; no deployment serves more than one.
 _Avoid_: Seller, store, vendor, tenant
+
+### Product
+
+**TillHand site**:
+The website where a Merchant signs up and gets its own MCP server. It also hosts TillHand's extension schemas.
+_Avoid_: Portal, dashboard, console, landing page
+
+**Storefront**:
+A Merchant's own website for human shoppers. It publishes that Merchant's `/.well-known/ucp`, so agents can find its MCP server. Belongs to the Merchant, never to TillHand.
+_Avoid_: Shop, site (alone), store
+
+**Demo Merchant**:
+The synthetic skincare brand used to show TillHand working end to end. It isn't a real business, and nothing may be built specifically for it.
+_Avoid_: Test brand, sample store, our brand
+
+**Platform**:
+A third-party agent or app, such as Google's or ChatGPT's, that shops with a Merchant through the public UCP door. It identifies itself on every request with a profile URL.
+_Avoid_: Client, consumer, bot
+
+**Merchant assistant**:
+The Merchant's own chatbot, on its site or on WhatsApp, which uses the Merchant door with a Merchant API key instead of a profile URL. Claim A is about this.
+_Avoid_: Chatbot (alone), widget, our agent
+
+**Extension**:
+A capability TillHand adds where UCP has none, named under the TillHand site's reversed domain (`app.vercel.tillhand.*`), e.g. refund requests and Suggestions.
+_Avoid_: Plugin, custom tool, add-on
 
 ### Agent
 
