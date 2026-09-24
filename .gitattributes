@@ -1,0 +1,6 @@
+# LF everywhere: the app runs in a Linux container, and Windows checkouts must not change that.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
