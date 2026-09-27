@@ -15,15 +15,24 @@ A product that gives D2C Merchants their own agent-ready store. **Each Merchant 
 
 ## Repository state
 
-**Early code.** A uv project with a `src/` layout (Python 3.11). So far it holds the UCP wire models (UCP `2026-08-25`), the project constants and Extensions, the error builders, and the catalog service interface. There's no server, database or payments code yet.
+**Early code.** A uv project with a `src/` layout (Python 3.11). It holds the UCP wire models (UCP `2026-08-25`), the project constants and Extensions, the error builders, and the **catalog data layer** (#12): the catalog domain model, the Neon schema (Alembic), the SQL, Pinecone embeddings, the `CatalogService` implementation with its UCP mapper, and two seed catalogs. There's no server or payments code yet.
 
 ```bash
 uv sync                                         # install from uv.lock
-uv run pytest -q                                # full suite
+uv run pytest -q                                # full suite (offline; the live Neon tests skip)
 uv run pytest tests/models/ucp/test_models.py   # a single file
 uv run pyright                                  # type check (standard mode)
 uv run ruff check . && uv run ruff format --check .
+
+uv run alembic upgrade head                                      # migrate the database in DATABASE_URL
+uv run python scripts/seed_catalog.py data/seeds/skincare.json  # load a catalog file, embed what changed
+uv run python scripts/search_smoke.py "serum for oily skin"     # real searches, by hand
+TILLHAND_NEON_TESTS=1 uv run pytest -m neon                     # the SQL against the seeded database
 ```
+
+- **Migrations are Alembic with hand-written SQL** (`op.execute`) in `migrations/versions/`. There are no SQLAlchemy models and no autogenerate: SQLAlchemy is only Alembic's plumbing, and the app uses asyncpg directly. Migrations run on the same pooled `DATABASE_URL` as the app.
+- **asyncpg behind Neon's pooler works as-is,** statement cache included (probed with 120 concurrent tasks, #12), and takes Neon's `channel_binding` parameter unchanged. A session-level `SET` doesn't survive the pooler, so per-database settings go in a migration (`alter database ... set`).
+- **A catalog file is the `Catalog` model** (`models/domain/catalog.py`), one per Merchant. The two synthetic ones are in `data/seeds/`. Re-seeding is idempotent, and it marks Products missing from the file as discontinued rather than deleting them.
 
 ### Code layout (layer-based; agreed 24 Sep 2026)
 
@@ -39,7 +48,7 @@ src/tillhand/
   utils/           small helpers that know nothing about the business
 src/tillhand_agent/  the Harness, a separate package that reaches the server only over HTTP
 tests/             mirrors src/ (tests/models/ucp/, tests/core/, ...); shared fixtures in tests/support/
-evals/  data/seeds/  scripts/  web/site/ (TillHand site)  web/storefront/ (Demo Merchant)  vendor/
+migrations/ (Alembic)  evals/  data/seeds/  scripts/  web/site/ (TillHand site)  web/storefront/ (Demo Merchant)  vendor/
 ```
 
 Folders are created when their first code lands, not before. The rules that make the layout work:

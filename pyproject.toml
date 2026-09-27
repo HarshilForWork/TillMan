@@ -7,9 +7,13 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
+    "alembic>=1.16",
+    "asyncpg>=0.30",
     "httpx2>=2.13,<3",
     "mcp==2.2.*",
     "pydantic>=2.11,<3",
+    "pydantic-settings>=2.10",
+    "sqlalchemy[asyncio]>=2.0",
 ]
 
 [build-system]
@@ -19,6 +23,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "anyio>=4.15.1",
+    "asyncpg-stubs>=0.31.3",
     "jsonschema[format-nongpl]>=4.23",
     "pyright>=1.1.414",
     "pytest>=9.1.1",
@@ -29,9 +34,10 @@ dev = [
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = ["-ra", "--strict-markers", "--import-mode=importlib"]
+markers = ["neon: runs against the live Neon database (opt-in: TILLHAND_NEON_TESTS=1)"]
 
 [tool.pyright]
-include = ["src", "tests"]
+include = ["src", "tests", "scripts", "migrations"]
 pythonVersion = "3.11"
 typeCheckingMode = "standard"
 venvPath = "."

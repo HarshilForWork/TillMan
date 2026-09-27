@@ -1,0 +1,206 @@
+{
+  "merchant": "Fernwell Skin",
+  "currency": "INR",
+  "products": [
+    {
+      "id": "prod_salicylic_gel_cleanser",
+      "handle": "salicylic-gel-cleanser",
+      "title": "Salicylic Acid Gel Cleanser",
+      "description": "A foaming gel face wash with 1% salicylic acid that clears excess oil and unclogs pores. Made for oily and acne-prone skin; gentle enough for twice-daily use.",
+      "categories": ["Skincare > Cleanser"],
+      "tags": ["oily skin", "acne-prone", "pores", "face wash", "salicylic acid", "BHA"],
+      "options": [{ "name": "Size", "values": ["100 ml", "200 ml"] }],
+      "variants": [
+        { "id": "var_salicylic_gel_cleanser_100", "sku": "FW-CLN-SAL-100", "options": { "Size": "100 ml" }, "price": 34900, "stock": 42 },
+        { "id": "var_salicylic_gel_cleanser_200", "sku": "FW-CLN-SAL-200", "options": { "Size": "200 ml" }, "price": 59900, "list_price": 69800, "stock": 18 }
+      ]
+    },
+    {
+      "id": "prod_ceramide_cream_cleanser",
+      "handle": "ceramide-cream-cleanser",
+      "title": "Ceramide Cream Cleanser",
+      "description": "A non-foaming cream cleanser with ceramides and glycerin that washes away dirt without stripping the skin barrier. For dry and sensitive skin that feels tight after washing.",
+      "categories": ["Skincare > Cleanser"],
+      "tags": ["dry skin", "sensitive skin", "ceramides", "fragrance-free", "face wash"],
+      "options": [{ "name": "Size", "values": ["100 ml", "200 ml"] }],
+      "variants": [
+        { "id": "var_ceramide_cream_cleanser_100", "sku": "FW-CLN-CER-100", "options": { "Size": "100 ml" }, "price": 39900 },
+        { "id": "var_ceramide_cream_cleanser_200", "sku": "FW-CLN-CER-200", "options": { "Size": "200 ml" }, "price": 64900 }
+      ]
+    },
+    {
+      "id": "prod_micellar_water",
+      "handle": "micellar-cleansing-water",
+      "title": "Micellar Cleansing Water",
+      "description": "A no-rinse micellar water that lifts makeup, sunscreen and grime on a cotton pad. Suits all skin types, including sensitive eyes.",
+      "categories": ["Skincare > Cleanser"],
+      "tags": ["makeup remover", "all skin types", "no-rinse", "sensitive skin"],
+      "options": [{ "name": "Size", "values": ["100 ml", "200 ml", "400 ml"] }],
+      "variants": [
+        { "id": "var_micellar_water_100", "sku": "FW-CLN-MIC-100", "options": { "Size": "100 ml" }, "price": 19900 },
+        { "id": "var_micellar_water_200", "sku": "FW-CLN-MIC-200", "options": { "Size": "200 ml" }, "price": 32900 },
+        { "id": "var_micellar_water_400", "sku": "FW-CLN-MIC-400", "options": { "Size": "400 ml" }, "price": 54900, "list_price": 65800 }
+      ]
+    },
+    {
+      "id": "prod_rose_toner",
+      "handle": "rose-hydrating-toner",
+      "title": "Rose Hydrating Toner",
+      "description": "An alcohol-free toner with rose water and panthenol that soothes and adds a first layer of hydration after cleansing. Best for dry and normal skin.",
+      "categories": ["Skincare > Toner"],
+      "tags": ["dry skin", "normal skin", "alcohol-free", "hydrating", "rose water"],
+      "options": [{ "name": "Size", "values": ["100 ml", "200 ml"] }],
+      "variants": [
+        { "id": "var_rose_toner_100", "sku": "FW-TON-ROS-100", "options": { "Size": "100 ml" }, "price": 29900, "stock": 25 },
+        { "id": "var_rose_toner_200", "sku": "FW-TON-ROS-200", "options": { "Size": "200 ml" }, "price": 49900, "stock": 9 }
+      ]
+    },
+    {
+      "id": "prod_glycolic_toner",
+      "handle": "glycolic-exfoliating-toner",
+      "title": "Glycolic Acid Exfoliating Toner",
+      "description": "A 7% glycolic acid toner that exfoliates dead skin cells for smoother texture and a brighter, more even tone. For dull skin and rough texture; use at night, a few times a week.",
+      "categories": ["Skincare > Toner"],
+      "tags": ["dull skin", "texture", "exfoliant", "AHA", "glycolic acid", "brightening"],
+      "options": [{ "name": "Size", "values": ["100 ml", "200 ml"] }],
+      "variants": [
+        { "id": "var_glycolic_toner_100", "sku": "FW-TON-GLY-100", "options": { "Size": "100 ml" }, "price": 44900, "stock": 14 },
+        { "id": "var_glycolic_toner_200", "sku": "FW-TON-GLY-200", "options": { "Size": "200 ml" }, "price": 74900, "stock": 0 }
+      ]
+    },
+    {
+      "id": "prod_niacinamide_serum",
+      "handle": "niacinamide-10-serum",
+      "title": "Niacinamide 10% Serum",
+      "description": "A lightweight serum with 10% niacinamide and 1% zinc that controls oil, minimises the look of enlarged pores and calms breakouts. For oily and combination skin.",
+      "categories": ["Skincare > Serum"],
+      "tags": ["oily skin", "combination skin", "pores", "oil control", "niacinamide", "acne-prone"],
+      "options": [{ "name": "Size", "values": ["15 ml", "30 ml", "50 ml"] }],
+      "variants": [
+        { "id": "var_niacinamide_serum_15", "sku": "FW-SER-NIA-15", "options": { "Size": "15 ml" }, "price": 34900, "stock": 30 },
+        { "id": "var_niacinamide_serum_30", "sku": "FW-SER-NIA-30", "options": { "Size": "30 ml" }, "price": 59900, "stock": 21 },
+        { "id": "var_niacinamide_serum_50", "sku": "FW-SER-NIA-50", "options": { "Size": "50 ml" }, "price": 84900, "list_price": 99800, "stock": 6 }
+      ]
+    },
+    {
+      "id": "prod_vitamin_c_serum",
+      "handle": "vitamin-c-15-serum",
+      "title": "Vitamin C 15% Serum",
+      "description": "A 15% ethyl ascorbic acid serum that fades dark spots and sun tan and brightens a dull complexion. Pair with sunscreen in the morning.",
+      "categories": ["Skincare > Serum"],
+      "tags": ["dark spots", "pigmentation", "tan removal", "brightening", "vitamin C", "dull skin"],
+      "options": [{ "name": "Size", "values": ["15 ml", "30 ml"] }],
+      "variants": [
+        { "id": "var_vitamin_c_serum_15", "sku": "FW-SER-VTC-15", "options": { "Size": "15 ml" }, "price": 49900, "stock": 11 },
+        { "id": "var_vitamin_c_serum_30", "sku": "FW-SER-VTC-30", "options": { "Size": "30 ml" }, "price": 84900, "stock": 0 }
+      ]
+    },
+    {
+      "id": "prod_hyaluronic_serum",
+      "handle": "hyaluronic-acid-serum",
+      "title": "Hyaluronic Acid Serum",
+      "description": "A multi-weight hyaluronic acid serum that draws in moisture for plumper, dewy skin. For dehydrated skin of any type; apply on damp skin before moisturiser.",
+      "categories": ["Skincare > Serum"],
+      "tags": ["hydrating", "dehydrated skin", "dry skin", "all skin types", "hyaluronic acid"],
+      "options": [{ "name": "Size", "values": ["15 ml", "30 ml", "50 ml"] }],
+      "variants": [
+        { "id": "var_hyaluronic_serum_15", "sku": "FW-SER-HYA-15", "options": { "Size": "15 ml" }, "price": 29900 },
+        { "id": "var_hyaluronic_serum_30", "sku": "FW-SER-HYA-30", "options": { "Size": "30 ml" }, "price": 49900 },
+        { "id": "var_hyaluronic_serum_50", "sku": "FW-SER-HYA-50", "options": { "Size": "50 ml" }, "price": 69900 }
+      ]
+    },
+    {
+      "id": "prod_retinol_serum",
+      "handle": "retinol-night-serum",
+      "title": "Retinol 0.3% Night Serum",
+      "description": "An encapsulated 0.3% retinol serum for fine lines, uneven texture and early signs of ageing. Night use only; start two or three times a week.",
+      "categories": ["Skincare > Serum"],
+      "tags": ["anti-ageing", "fine lines", "wrinkles", "retinol", "night"],
+      "options": [{ "name": "Size", "values": ["15 ml", "30 ml"] }],
+      "variants": [
+        { "id": "var_retinol_serum_15", "sku": "FW-SER-RET-15", "options": { "Size": "15 ml" }, "price": 64900, "stock": 0 },
+        { "id": "var_retinol_serum_30", "sku": "FW-SER-RET-30", "options": { "Size": "30 ml" }, "price": 104900, "stock": 0 }
+      ]
+    },
+    {
+      "id": "prod_oil_free_gel_moisturiser",
+      "handle": "oil-free-gel-moisturiser",
+      "title": "Oil-Free Gel Moisturiser",
+      "description": "A water-light gel moisturiser that hydrates without grease or shine and sits well under sunscreen. For oily, combination and acne-prone skin in humid weather.",
+      "categories": ["Skincare > Moisturiser"],
+      "tags": ["oily skin", "combination skin", "lightweight", "non-comedogenic", "gel", "humid weather"],
+      "options": [{ "name": "Size", "values": ["50 g", "100 g"] }],
+      "variants": [
+        { "id": "var_oil_free_gel_moisturiser_50", "sku": "FW-MOI-GEL-50", "options": { "Size": "50 g" }, "price": 39900, "stock": 35 },
+        { "id": "var_oil_free_gel_moisturiser_100", "sku": "FW-MOI-GEL-100", "options": { "Size": "100 g" }, "price": 64900, "stock": 12 }
+      ]
+    },
+    {
+      "id": "prod_barrier_repair_cream",
+      "handle": "barrier-repair-cream",
+      "title": "Barrier Repair Cream",
+      "description": "A rich cream with ceramides, cholesterol and fatty acids that repairs a damaged skin barrier and relieves dryness, flaking and redness. For dry and sensitive skin.",
+      "categories": ["Skincare > Moisturiser"],
+      "tags": ["dry skin", "sensitive skin", "ceramides", "barrier repair", "fragrance-free", "winter"],
+      "options": [{ "name": "Size", "values": ["50 g", "100 g"] }],
+      "variants": [
+        { "id": "var_barrier_repair_cream_50", "sku": "FW-MOI-BAR-50", "options": { "Size": "50 g" }, "price": 54900 },
+        { "id": "var_barrier_repair_cream_100", "sku": "FW-MOI-BAR-100", "options": { "Size": "100 g" }, "price": 89900, "list_price": 109800 }
+      ]
+    },
+    {
+      "id": "prod_overnight_recovery_cream",
+      "handle": "overnight-recovery-cream",
+      "title": "Overnight Recovery Cream",
+      "description": "A thick overnight sleeping cream with peptides and squalane for tired, dry skin. This product has been retired.",
+      "status": "discontinued",
+      "categories": ["Skincare > Moisturiser"],
+      "tags": ["dry skin", "night", "peptides"],
+      "options": [{ "name": "Size", "values": ["50 g"] }],
+      "variants": [
+        { "id": "var_overnight_recovery_cream_50", "sku": "FW-MOI-OVN-50", "options": { "Size": "50 g" }, "price": 74900, "stock": 3 }
+      ]
+    },
+    {
+      "id": "prod_spf50_gel_sunscreen",
+      "handle": "spf-50-gel-sunscreen",
+      "title": "SPF 50 PA++++ Gel Sunscreen",
+      "description": "A broad-spectrum SPF 50 chemical sunscreen with a matte, gel finish and no white cast. For oily and combination skin; reapply every two to three hours outdoors.",
+      "categories": ["Skincare > Sunscreen"],
+      "tags": ["sunscreen", "SPF 50", "matte", "no white cast", "oily skin", "sun protection"],
+      "options": [{ "name": "Size", "values": ["50 g", "100 g"] }],
+      "variants": [
+        { "id": "var_spf50_gel_sunscreen_50", "sku": "FW-SUN-GEL-50", "options": { "Size": "50 g" }, "price": 44900, "stock": 50 },
+        { "id": "var_spf50_gel_sunscreen_100", "sku": "FW-SUN-GEL-100", "options": { "Size": "100 g" }, "price": 74900, "stock": 20 }
+      ]
+    },
+    {
+      "id": "prod_mineral_sunscreen",
+      "handle": "mineral-spf-40-sunscreen",
+      "title": "Mineral SPF 40 Sunscreen",
+      "description": "A zinc oxide mineral sunscreen with SPF 40 that protects without chemical filters. Gentle on sensitive and reactive skin; leaves a light tint.",
+      "categories": ["Skincare > Sunscreen"],
+      "tags": ["sunscreen", "mineral", "zinc oxide", "sensitive skin", "SPF 40", "sun protection"],
+      "options": [{ "name": "Size", "values": ["50 g", "80 g"] }],
+      "variants": [
+        { "id": "var_mineral_sunscreen_50", "sku": "FW-SUN-MIN-50", "options": { "Size": "50 g" }, "price": 49900, "stock": 16 },
+        { "id": "var_mineral_sunscreen_80", "sku": "FW-SUN-MIN-80", "options": { "Size": "80 g" }, "price": 69900, "stock": 0 }
+      ]
+    }
+  ],
+  "bundles": [
+    { "source": "prod_salicylic_gel_cleanser", "target": "prod_niacinamide_serum", "weight": 0.9 },
+    { "source": "prod_salicylic_gel_cleanser", "target": "prod_oil_free_gel_moisturiser", "weight": 0.8 },
+    { "source": "prod_niacinamide_serum", "target": "prod_oil_free_gel_moisturiser", "weight": 0.9 },
+    { "source": "prod_oil_free_gel_moisturiser", "target": "prod_spf50_gel_sunscreen", "weight": 0.9 },
+    { "source": "prod_ceramide_cream_cleanser", "target": "prod_barrier_repair_cream", "weight": 0.9 },
+    { "source": "prod_ceramide_cream_cleanser", "target": "prod_hyaluronic_serum", "weight": 0.7 },
+    { "source": "prod_hyaluronic_serum", "target": "prod_barrier_repair_cream", "weight": 0.8 },
+    { "source": "prod_barrier_repair_cream", "target": "prod_mineral_sunscreen", "weight": 0.8 },
+    { "source": "prod_vitamin_c_serum", "target": "prod_spf50_gel_sunscreen", "weight": 1.0 },
+    { "source": "prod_glycolic_toner", "target": "prod_spf50_gel_sunscreen", "weight": 0.8 },
+    { "source": "prod_retinol_serum", "target": "prod_barrier_repair_cream", "weight": 0.8 },
+    { "source": "prod_rose_toner", "target": "prod_hyaluronic_serum", "weight": 0.7 },
+    { "source": "prod_micellar_water", "target": "prod_ceramide_cream_cleanser", "weight": 0.6 }
+  ]
+}

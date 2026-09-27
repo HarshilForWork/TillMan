@@ -1,0 +1,140 @@
+{
+  "merchant": "Hillrow Coffee",
+  "currency": "INR",
+  "products": [
+    {
+      "id": "prod_ghat_estate_dark",
+      "handle": "ghat-estate-dark-roast",
+      "title": "Ghat Estate Dark Roast",
+      "description": "A dark roast arabica from a single estate in the Western Ghats, with notes of cocoa, molasses and toasted nuts. Heavy body and low acidity; strong enough for milk.",
+      "categories": ["Coffee > Beans > Dark Roast"],
+      "tags": ["dark roast", "arabica", "single estate", "chocolatey", "low acidity", "strong"],
+      "options": [
+        { "name": "Grind", "values": ["Whole Bean", "French Press", "Pour Over", "Espresso"] },
+        { "name": "Size", "values": ["250 g", "500 g", "1 kg"] }
+      ],
+      "variants": [
+        { "id": "var_ghat_dark_wb_250", "sku": "HR-GHD-WB-250", "options": { "Grind": "Whole Bean", "Size": "250 g" }, "price": 59900, "stock": 40 },
+        { "id": "var_ghat_dark_wb_500", "sku": "HR-GHD-WB-500", "options": { "Grind": "Whole Bean", "Size": "500 g" }, "price": 109900, "stock": 15 },
+        { "id": "var_ghat_dark_wb_1000", "sku": "HR-GHD-WB-1000", "options": { "Grind": "Whole Bean", "Size": "1 kg" }, "price": 199900, "list_price": 219800, "stock": 4 },
+        { "id": "var_ghat_dark_fp_250", "sku": "HR-GHD-FP-250", "options": { "Grind": "French Press", "Size": "250 g" }, "price": 59900, "stock": 22 },
+        { "id": "var_ghat_dark_fp_500", "sku": "HR-GHD-FP-500", "options": { "Grind": "French Press", "Size": "500 g" }, "price": 109900, "stock": 0 },
+        { "id": "var_ghat_dark_po_250", "sku": "HR-GHD-PO-250", "options": { "Grind": "Pour Over", "Size": "250 g" }, "price": 59900, "stock": 18 },
+        { "id": "var_ghat_dark_es_250", "sku": "HR-GHD-ES-250", "options": { "Grind": "Espresso", "Size": "250 g" }, "price": 59900, "stock": 10 }
+      ]
+    },
+    {
+      "id": "prod_monsooned_malabar",
+      "handle": "monsooned-malabar",
+      "title": "Monsooned Malabar",
+      "description": "Beans exposed to monsoon winds on the Malabar coast until they swell and mellow. A medium roast with earthy, spicy notes and almost no acidity.",
+      "categories": ["Coffee > Beans > Medium Roast"],
+      "tags": ["medium roast", "monsooned", "earthy", "spicy", "low acidity"],
+      "options": [
+        { "name": "Grind", "values": ["Whole Bean", "French Press", "Pour Over"] },
+        { "name": "Size", "values": ["250 g", "500 g"] }
+      ],
+      "variants": [
+        { "id": "var_malabar_wb_250", "sku": "HR-MAL-WB-250", "options": { "Grind": "Whole Bean", "Size": "250 g" }, "price": 54900 },
+        { "id": "var_malabar_wb_500", "sku": "HR-MAL-WB-500", "options": { "Grind": "Whole Bean", "Size": "500 g" }, "price": 99900 },
+        { "id": "var_malabar_fp_250", "sku": "HR-MAL-FP-250", "options": { "Grind": "French Press", "Size": "250 g" }, "price": 54900 },
+        { "id": "var_malabar_po_250", "sku": "HR-MAL-PO-250", "options": { "Grind": "Pour Over", "Size": "250 g" }, "price": 54900 }
+      ]
+    },
+    {
+      "id": "prod_attikan_light",
+      "handle": "attikan-light-roast",
+      "title": "Attikan Light Roast",
+      "description": "A light roast from high-altitude estates, bright and fruity with notes of orange, jaggery and black tea. Best brewed as pour over or AeroPress, black.",
+      "categories": ["Coffee > Beans > Light Roast"],
+      "tags": ["light roast", "fruity", "bright", "citrus", "pour over", "black coffee"],
+      "options": [
+        { "name": "Grind", "values": ["Whole Bean", "Pour Over"] },
+        { "name": "Size", "values": ["250 g", "500 g"] }
+      ],
+      "variants": [
+        { "id": "var_attikan_wb_250", "sku": "HR-ATK-WB-250", "options": { "Grind": "Whole Bean", "Size": "250 g" }, "price": 64900, "stock": 12 },
+        { "id": "var_attikan_wb_500", "sku": "HR-ATK-WB-500", "options": { "Grind": "Whole Bean", "Size": "500 g" }, "price": 119900, "stock": 0 },
+        { "id": "var_attikan_po_250", "sku": "HR-ATK-PO-250", "options": { "Grind": "Pour Over", "Size": "250 g" }, "price": 64900, "stock": 9 }
+      ]
+    },
+    {
+      "id": "prod_house_espresso",
+      "handle": "house-espresso-blend",
+      "title": "House Espresso Blend",
+      "description": "An arabica and robusta blend roasted for espresso machines and moka pots, with thick crema and a caramel finish that holds up in cappuccinos and lattes.",
+      "categories": ["Coffee > Beans > Espresso"],
+      "tags": ["espresso", "blend", "robusta", "crema", "moka pot", "milk drinks"],
+      "options": [
+        { "name": "Grind", "values": ["Whole Bean", "Espresso"] },
+        { "name": "Size", "values": ["250 g", "500 g", "1 kg"] }
+      ],
+      "variants": [
+        { "id": "var_espresso_wb_250", "sku": "HR-ESP-WB-250", "options": { "Grind": "Whole Bean", "Size": "250 g" }, "price": 49900 },
+        { "id": "var_espresso_wb_1000", "sku": "HR-ESP-WB-1000", "options": { "Grind": "Whole Bean", "Size": "1 kg" }, "price": 169900 },
+        { "id": "var_espresso_es_250", "sku": "HR-ESP-ES-250", "options": { "Grind": "Espresso", "Size": "250 g" }, "price": 49900 },
+        { "id": "var_espresso_es_500", "sku": "HR-ESP-ES-500", "options": { "Grind": "Espresso", "Size": "500 g" }, "price": 89900 }
+      ]
+    },
+    {
+      "id": "prod_swiss_water_decaf",
+      "handle": "swiss-water-decaf",
+      "title": "Swiss Water Decaf",
+      "description": "Arabica decaffeinated with water alone, no chemical solvents, then roasted medium. Smooth and nutty, for an evening cup without the caffeine.",
+      "categories": ["Coffee > Beans > Decaf"],
+      "tags": ["decaf", "caffeine-free", "medium roast", "nutty", "evening"],
+      "options": [
+        { "name": "Grind", "values": ["Whole Bean", "French Press"] },
+        { "name": "Size", "values": ["250 g"] }
+      ],
+      "variants": [
+        { "id": "var_decaf_wb_250", "sku": "HR-DEC-WB-250", "options": { "Grind": "Whole Bean", "Size": "250 g" }, "price": 69900, "stock": 7 },
+        { "id": "var_decaf_fp_250", "sku": "HR-DEC-FP-250", "options": { "Grind": "French Press", "Size": "250 g" }, "price": 69900, "stock": 3 }
+      ]
+    },
+    {
+      "id": "prod_cold_brew_bags",
+      "handle": "cold-brew-bags",
+      "title": "Cold Brew Coffee Bags",
+      "description": "Pre-portioned bags of coarse coffee for cold brew: steep one in a litre of water in the fridge overnight for a smooth, sweet concentrate.",
+      "categories": ["Coffee > Cold Brew"],
+      "tags": ["cold brew", "iced coffee", "easy", "no equipment", "summer"],
+      "options": [{ "name": "Pack", "values": ["6 bags", "12 bags"] }],
+      "variants": [
+        { "id": "var_cold_brew_6", "sku": "HR-CBB-6", "options": { "Pack": "6 bags" }, "price": 44900 },
+        { "id": "var_cold_brew_12", "sku": "HR-CBB-12", "options": { "Pack": "12 bags" }, "price": 79900 }
+      ]
+    },
+    {
+      "id": "prod_drip_bags",
+      "handle": "pour-over-drip-bags",
+      "title": "Pour Over Drip Bags",
+      "description": "Single-serve drip bags that hang on the rim of a mug: pour hot water through for fresh filter coffee at the office or while travelling.",
+      "categories": ["Coffee > Drip Bags"],
+      "tags": ["drip bags", "single serve", "travel", "office", "instant alternative"],
+      "options": [{ "name": "Pack", "values": ["10 bags", "20 bags"] }],
+      "variants": [
+        { "id": "var_drip_bags_10", "sku": "HR-DRP-10", "options": { "Pack": "10 bags" }, "price": 39900, "stock": 30 },
+        { "id": "var_drip_bags_20", "sku": "HR-DRP-20", "options": { "Pack": "20 bags" }, "price": 72900, "stock": 0 }
+      ]
+    },
+    {
+      "id": "prod_french_press",
+      "handle": "french-press-600",
+      "title": "Glass French Press, 600 ml",
+      "description": "A borosilicate glass French press with a stainless steel mesh plunger that brews three cups of full-bodied coffee in four minutes.",
+      "categories": ["Equipment > Brewers"],
+      "tags": ["french press", "brewer", "equipment", "glass"],
+      "variants": [
+        { "id": "var_french_press_600", "sku": "HR-EQP-FP-600", "price": 129900, "list_price": 149900, "stock": 8 }
+      ]
+    }
+  ],
+  "bundles": [
+    { "source": "prod_french_press", "target": "prod_ghat_estate_dark", "weight": 0.9 },
+    { "source": "prod_french_press", "target": "prod_monsooned_malabar", "weight": 0.7 },
+    { "source": "prod_ghat_estate_dark", "target": "prod_french_press", "weight": 0.6 },
+    { "source": "prod_attikan_light", "target": "prod_drip_bags", "weight": 0.5 },
+    { "source": "prod_house_espresso", "target": "prod_swiss_water_decaf", "weight": 0.4 }
+  ]
+}

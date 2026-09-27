@@ -13,6 +13,10 @@ from tillhand.utils.namespace import url_authority
 UCP_VERSION = "2026-08-25"
 """The UCP version we conform to. The vendored spec under `vendor/ucp/v{UCP_VERSION}/` must match."""
 
+CATALOG_SEARCH = "dev.ucp.shopping.catalog.search"
+CATALOG_LOOKUP = "dev.ucp.shopping.catalog.lookup"
+"""The UCP catalog capabilities we implement: `search_catalog`, and `lookup_catalog` with `get_product`."""
+
 TILLHAND_SITE = "https://tillhand.vercel.app"
 EXTENSIONS_VERSION = "2026-09-24"
 

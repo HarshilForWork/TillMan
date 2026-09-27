@@ -11,6 +11,11 @@ from tillhand.models.ucp import ErrorResponse, MessageError, Severity, UcpRespon
 UPSTREAM_TIMEOUT = "upstream_timeout"
 
 
+class RequestTooLarge(ValueError):
+    """A request over one of our batch limits. Not a business outcome: the MCP layer maps it to
+    JSON-RPC `-32602` (Invalid params), as catalog/mcp.md requires for oversized lookups."""
+
+
 def business_error(
     *,
     code: str,

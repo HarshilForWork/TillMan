@@ -1,0 +1,29 @@
+"""Settings read from the environment (and `.env` in local dev). One instance per process, made at startup."""
+
+from functools import cache
+from typing import Annotated, Literal
+
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+EMBEDDING_DIMENSION = 1024
+"""`llama-text-embed-v2` at its default size (#27). The `vector(1024)` column in the migrations must match."""
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    database_url: SecretStr
+    """Neon's pooled connection string. The app and the migrations both use it."""
+
+    pinecone_api_key: SecretStr
+    embedding_model: Literal["llama-text-embed-v2"] = "llama-text-embed-v2"
+    embedding_dimension: Annotated[int, Field(ge=EMBEDDING_DIMENSION, le=EMBEDDING_DIMENSION)] = (
+        EMBEDDING_DIMENSION
+    )
+    """Pinned: changing it needs a migration of the `vector(1024)` column, not just a new value."""
+
+
+@cache
+def get_settings() -> Settings:
+    return Settings()  # pyright: ignore[reportCallIssue]  (fields come from the environment)
