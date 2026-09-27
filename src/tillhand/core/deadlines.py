@@ -19,6 +19,10 @@ EMBED_PASSAGES_SECONDS = 30.0
 """Only the seed script embeds passages, in batches of up to 96, so it gets far longer than a search."""
 
 
+TOOL_SECONDS = 10.0
+"""A whole tool call. Covers a search's embedding (3 s) and query (5 s) budgets, plus some slack."""
+
+
 class StepTimeout(Exception):
     def __init__(self, step: str) -> None:
         super().__init__(f"{step} ran out of time")

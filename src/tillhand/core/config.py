@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     database_url: SecretStr
     """Neon's pooled connection string. The app and the migrations both use it."""
 
+    allowed_hosts: list[str] = ["localhost:*", "127.0.0.1:*"]
+    """Host headers the MCP endpoint answers; any other gets HTTP 421. A JSON list in the environment,
+    e.g. `ALLOWED_HOSTS='["tillhand-demo.up.railway.app"]'`. `name:*` allows any port."""
+
     pinecone_api_key: SecretStr
     embedding_model: Literal["llama-text-embed-v2"] = "llama-text-embed-v2"
     embedding_dimension: Annotated[int, Field(ge=EMBEDDING_DIMENSION, le=EMBEDDING_DIMENSION)] = (

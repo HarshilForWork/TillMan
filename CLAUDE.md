@@ -15,7 +15,7 @@ A product that gives D2C Merchants their own agent-ready store. **Each Merchant 
 
 ## Repository state
 
-**Early code.** A uv project with a `src/` layout (Python 3.11). It holds the UCP wire models (UCP `2026-08-25`), the project constants and Extensions, the error builders, and the **catalog data layer** (#12): the catalog domain model, the Neon schema (Alembic), the SQL, Pinecone embeddings, the `CatalogService` implementation with its UCP mapper, and two seed catalogs. There's no server or payments code yet.
+**Early code.** A uv project with a `src/` layout (Python 3.11). It holds the UCP wire models (UCP `2026-08-25`), the project constants and Extensions, the error builders, and the **catalog data layer** (#12): the catalog domain model, the Neon schema (Alembic), the SQL, Pinecone embeddings, the `CatalogService` implementation with its UCP mapper, and two seed catalogs. It also holds the **MCP server** (#34): the three UCP catalog tools over stateless streamable HTTP at `/mcp`, inside a FastAPI app (`main.py`) with a `/healthz`. There's no cart, checkout or payments code yet.
 
 ```bash
 uv sync                                         # install from uv.lock
@@ -27,7 +27,9 @@ uv run ruff check . && uv run ruff format --check .
 uv run alembic upgrade head                                      # migrate the database in DATABASE_URL
 uv run python scripts/seed_catalog.py data/seeds/skincare.json  # load a catalog file, embed what changed
 uv run python scripts/search_smoke.py "serum for oily skin"     # real searches, by hand
-TILLHAND_NEON_TESTS=1 uv run pytest -m neon                     # the SQL against the seeded database
+TILLHAND_NEON_TESTS=1 uv run pytest -m neon                     # the SQL and the production app, live
+
+uv run uvicorn tillhand.main:production_app --factory --port 8000  # serve /mcp over Neon + Pinecone
 ```
 
 - **Migrations are Alembic with hand-written SQL** (`op.execute`) in `migrations/versions/`. There are no SQLAlchemy models and no autogenerate: SQLAlchemy is only Alembic's plumbing, and the app uses asyncpg directly. Migrations run on the same pooled `DATABASE_URL` as the app.
@@ -109,7 +111,9 @@ Standing rules from the project owner. They apply to every line of code, includi
 - **`mcp` 2.x is a breaking rewrite.** Pin the SDK line explicitly. MCP code recalled from memory or older tutorials is likely wrong. **Set `stateless_http=True`.** Verified on `mcp` 2.2.0 with two replicas behind a round-robin proxy:
   - A client speaking the `2026-07-28` protocol is stateless no matter how the flag is set. Our own 2.x `Client` negotiates that version by default (`mode="auto"`).
   - A client using the legacy handshake (`2024-11-05` … `2025-11-25`) gets a server-side session unless the flag is `True`. Without sticky sessions, which Railway doesn't have, its second request fails with `Session not found`. Third-party agents may still speak the legacy protocol.
-- Without `TransportSecuritySettings(allowed_hosts=[...])` every request returns **HTTP 421** (localhost-only DNS-rebinding protection is on by default).
+- Without `TransportSecuritySettings(allowed_hosts=[...])` every request returns **HTTP 421** (localhost-only DNS-rebinding protection is on by default). Ours comes from the `ALLOWED_HOSTS` setting (a JSON list). A request carrying any browser `Origin` gets **403**, deliberately: Platforms call from servers.
+- **UCP tools use the low-level `Server`, not `MCPServer`'s `@tool`** (`api/mcp/server.py`). The decorator turns bad arguments into `isError` results and wraps a union return in `{"result": ...}`; both break UCP's MCP binding. Tools publish no `outputSchema`, because a client would check an `ErrorResponse` against it.
+- **On the legacy handshake path the SDK sends an unhandled exception's own text to the client** as JSON-RPC error code 0 (the modern path sanitizes it). `call_tool` therefore catches everything that isn't an `MCPError`, logs it and answers `-32603`.
 - `torch` must be installed from the CPU index, or the image pulls the CUDA stack for a GPU that will never exist.
 - Prompt Guard 2 is **gated** (request access from Meta on HF, manual approval) under the Llama 4 Community License, with a **512-token context** — chunk long catalog copy, and expect false positives on benign product text.
 - DeepEval: `ToolCorrectnessMetric` is only deterministic if `available_tools` is **not** passed. Guardrail scenarios use `ToolPermissionMetric` (threshold 1.0, no model). Groq has no native DeepEval support — try the LiteLLM route before subclassing `DeepEvalBaseLLM`.
