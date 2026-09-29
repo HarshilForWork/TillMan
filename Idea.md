@@ -85,6 +85,8 @@ Risks this flow has to handle explicitly: webhook-arrives-before-redirect races;
 
 An agent-callable `com.tillhand.*` capability returning relevant cross-sell candidates for the current cart, leaning on preference memory where it helps. Curated bundle relationships plus embedding similarity — no LLM call needed.
 
+*Designed in #18 (ADR-0006).* The Extension is `app.vercel.tillhand.shopping.suggestions` with the tool `get_suggestions`. It takes Product ids or a Cart, puts Bundles first, and fills gaps with similar Products from *other* categories, so it suggests complements, not substitutes. Each Suggestion carries a structured reason. The memory slots are left for #29. The growth claim is shown against a control, in simulated Sessions with the tool removed, and a built-in holdout lets real Merchants measure their own lift.
+
 This is the growth half of the pitch. The metric is basket size, and it is measurable against a control.
 
 ### 5. Server-side authorization layer
@@ -108,7 +110,7 @@ A **thin chat loop**, not a state machine that owns authority: list the MCP tool
 
 Its one genuinely important job is bridging server and human — surfacing a payment intent or an approval requirement and carrying the result back. It also owns a step limit and retry on transport failures.
 
-Deliberately replaceable: the same endpoint should work from Claude Desktop as a custom connector. That's the point, not an embarrassment.
+Deliberately replaceable: any UCP-conformant Platform can use the same endpoint. That's the point, not an embarrassment. (Claude Desktop was the original example, but it sends no UCP profile, which the spec requires on every request, so it can't use the public door. Decided in #11.)
 
 ### 7. Memory
 
@@ -161,9 +163,9 @@ Razorpay **test mode** keys throughout — no real money ever moves.
 2. UCP-conformant MCP server: catalog tools first, then cart and checkout.
 3. `/.well-known/ucp` profile and the demo storefront.
 4. The UPI/Razorpay payment handler — one purchase end to end.
-5. Server-side authorization: scopes, refund-request policy, data isolation, injection screening.
+5. Server-side authorization: scopes, refund-request policy, data isolation, injection screening. UCP identity linking (our own OAuth authorization server) comes after the core purchase flow works (#11).
 6. Bundle and upsell.
-7. The thin agent client, plus the same endpoint working from Claude Desktop.
+7. The thin agent client, which proves any UCP Platform can use the same endpoint.
 8. Memory layers.
 9. Eval harness against what now exists; run and fix regressions.
 10. Cloud deployment, logging and tracing.
@@ -174,7 +176,7 @@ Razorpay **test mode** keys throughout — no real money ever moves.
 
 - **We never execute a refund.** An agent may request one; a human executes it in the dashboard. Refund execution obligations — including RBI's requirement that refunds return to the original payment method — bind the **payment aggregator**, not us, and we intend to stay outside that entirely. Razorpay's own MCP server already ships `create_refund` for merchants who want ops automation; that is a different product for a different caller.
 - **We do not use Razorpay's MCP server inside our own.** It is merchant-side API automation (35+ tools at `mcp.razorpay.com`), not a UCP payment handler or an agentic-checkout protocol. Our server is deterministic code and should call the Razorpay REST API directly; MCP belongs between a *model* and tools, not between two pieces of our own code. It is genuinely useful in the *development* loop.
-- **We are not using NeMo Guardrails as the tool-call gate.** Its IORails path (v0.23+) *does* suppress blocked tool calls, but it is schema/structural validation only — it cannot express a policy like a spend limit — supports only the OpenAI Chat Completions wire format (not Gemini), and is opt-in and experimental. The path that *can* run arbitrary policy returns the blocked call to the caller anyway. More fundamentally: a third-party agent never runs our NeMo in-loop, so enforcement has to be server-side regardless.
+- **NeMo Guardrails was evaluated and dropped from the stack entirely** (#13, ADR-0005). NVIDIA's own v0.24 tests assert that a blocked tool call is still returned in `result["tool_calls"]`. The server, where authority lives, has no LLM for NeMo to wrap, and the Harness screens nothing. The original reasoning, kept for the record: its IORails path (v0.23+) *does* suppress blocked tool calls, but it is schema/structural validation only — it cannot express a policy like a spend limit — supports only the OpenAI Chat Completions wire format (not Gemini), and is opt-in and experimental. The path that *can* run arbitrary policy returns the blocked call to the caller anyway. More fundamentally: a third-party agent never runs our NeMo in-loop, so enforcement has to be server-side regardless.
 - **We are not claiming a consumer AI agent will discover us.** No crawl or registry exists, and no open consumer channel serves Indian buyers yet.
 - **We are not relying on `llms.txt` or schema.org** as the discovery mechanism — 97% of published `llms.txt` files receive zero requests in a month, and neither UCP nor ACP builds on schema.org. We serve `llms.txt` as a cheap redundant hint only.
 - We are not building decoy merchants, not multi-tenant, and not touching any payment credentials but our own.
@@ -217,7 +219,7 @@ Razorpay **test mode** keys throughout — no real money ever moves.
 | --- | --- |
 | "UCP defines no discovery mechanism at all" | False — `/.well-known/ucp` **is** the spec's normative entry point. The true point is that no *crawl or registry* exists |
 | "UCP covers neither refunds" | False — refunds are modelled as order adjustments. UCP lacks an *agent-callable refund tool* |
-| "NeMo cannot gate tool calls" | Stale — IORails does suppress blocked calls, but cannot express our policy and excludes Gemini |
+| "NeMo cannot gate tool calls" | Stale — IORails does suppress blocked calls, but cannot express our policy and excludes Gemini. NeMo was later dropped entirely (ADR-0005) |
 | "No consumer channel serves Indian buyers" | Needs the qualifier *open/self-serve* — closed Razorpay–NPCI pilots do serve India |
 | "Checkout requires RFC 9421" | Overstated — the spec says SHOULD; only webhooks MUST be signed |
 | Google checkout is US/CA/AU | Currently **US and Australia**; Canada and the UK are announced |

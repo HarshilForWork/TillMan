@@ -35,12 +35,20 @@ A curated, directed pairing from one Product to another that the Merchant recomm
 _Avoid_: Combo, routine, kit
 
 **Suggestion**:
-A Product offered to the Customer as an upsell or cross-sell, whatever produced it: a Bundle, or similarity when no Bundle exists.
+A Product offered to the Customer as an upsell or cross-sell, whatever produced it: a Bundle, or similarity when no Bundle exists. Chosen by deterministic code, never a model. It always carries its reason (what produced it, and from which Product), so the agent explains it rather than inventing a reason.
 _Avoid_: Recommendation, upsell (as a noun)
 
+**Holdout**:
+The share of Carts deliberately shown no Suggestions, so a Merchant can measure what Suggestions actually add. It's chosen per Cart, so a whole shopping journey is consistently in or out.
+_Avoid_: Control group (that is the eval suite's simulated comparison), A/B test
+
 **Customer**:
-The person on whose behalf the agent acts, and to whom Orders and memory are scoped.
+The person on whose behalf the agent acts, and to whom Orders and memory are scoped. The server knows who a Customer is only through a Customer token, or, on the Merchant door, the Merchant's own id for them. An email or phone number typed at checkout is never proof. Without either, the caller shops as a guest.
 _Avoid_: User, client, buyer, account
+
+**Refund request**:
+A Customer's ask, made through an agent, to be refunded for some of an Order's line items. The server either refuses it with a reason or records it as pending approval. A human always decides, and executes any refund in the Razorpay dashboard. TillHand never moves money.
+_Avoid_: Refund (that is the money moving, which we never do), return
 
 **Merchant**:
 A D2C brand whose catalog TillHand exposes. Each Merchant gets its own deployment; no deployment serves more than one.
@@ -68,6 +76,22 @@ _Avoid_: Client, consumer, bot
 The Merchant's own chatbot, on its site or on WhatsApp, which uses the Merchant door with a Merchant API key instead of a profile URL. Claim A is about this.
 _Avoid_: Chatbot (alone), widget, our agent
 
+**Merchant API key**:
+The secret a Merchant assistant sends to use the Merchant door, in its own header, never in `Authorization`. Each key maps to exactly one pre-registered profile. Only its hash is stored, and it can be revoked instantly.
+_Avoid_: Token, secret (alone), password
+
+**Identity linking**:
+UCP's OAuth flow in which a Customer signs in on the Merchant's deployment, which runs its own authorization server, so that an agent can act for them. It only ever adds to what a guest can do, never gates it.
+_Avoid_: Login, account linking, SSO
+
+**Customer token**:
+What identity linking hands an agent: an opaque bearer token naming one Customer, one Platform registration and its scopes. Only its hash is stored, and revoking it takes effect immediately.
+_Avoid_: Session token, access key, JWT
+
+**Platform registration**:
+The record that lets one Platform, or a first-party Merchant assistant, ask for Customer tokens: an id, exactly one profile, and exact redirect URLs, added by an admin script. OAuth calls this a client.
+_Avoid_: Client (alone), app, integration
+
 **Extension**:
 A capability TillHand adds where UCP has none, named under the TillHand site's reversed domain (`app.vercel.tillhand.*`), e.g. refund requests and Suggestions.
 _Avoid_: Plugin, custom tool, add-on
@@ -75,8 +99,16 @@ _Avoid_: Plugin, custom tool, add-on
 ### Agent
 
 **Harness**:
-The deterministic code around the model: it perceives, plans, dispatches tool calls, applies guardrails, logs, and halts. The model decides intent; the Harness decides whether the intent is permitted to happen.
+The code around the model in our own agent client. It shows the model the tools, runs the calls the model asks for, enforces a step limit and deadlines, retries transport failures, performs the Human bridge, and records every Turn. It decides nothing safety-critical: every rule is enforced by the server, because a Platform's agent never runs our Harness.
 _Avoid_: Orchestrator, agent loop, controller
+
+**Turn**:
+One Customer message and everything the Harness does until it replies. It ends with a stop reason: answered, step limit, upstream failure, or awaiting payment.
+_Avoid_: Step, round, exchange
+
+**Human bridge**:
+Showing the Customer something only a human can act on, such as a payment link or a refund-request notice, exactly as the server sent it, then carrying the outcome back into the Session.
+_Avoid_: Handoff, escalation (UCP's `requires_escalation` is the server's status, not this)
 
 **Guardrail**:
 A check the Harness applies that can block an action. Three layers: input (injection detection on untrusted text), action (deterministic policy on proposed tool calls), output (what may be shown back).

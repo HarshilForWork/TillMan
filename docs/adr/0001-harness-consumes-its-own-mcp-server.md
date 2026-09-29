@@ -1,6 +1,6 @@
 # The Harness consumes its own MCP server over HTTP
 
-TillHand's Claim B is that any capable third-party agent could discover this merchant and hand off into our tools. The obvious implementation is for our own Harness to import the tool functions directly, since it lives in the same codebase — but then the MCP transport is never exercised by anything we run, and the claim is untested. So the Harness connects to the MCP server as a real MCP client over streamable HTTP, walking the exact path a third-party agent would walk.
+TillHand's Claim B is that any capable third-party agent could discover this merchant and hand off into our tools. The obvious implementation is for our own Harness to import the tool functions directly, since it lives in the same codebase — but then the MCP transport is never exercised by anything we run, and the claim is untested. So the Harness connects to the MCP server as a real MCP client over streamable HTTP, over the same transport a third-party agent uses. Only the credential differs: by default the Harness plays the Merchant assistant on the Merchant door (a Merchant API key), and a setting switches it to the public UCP door with a profile, as a Platform would (#10).
 
 ## Consequences
 
