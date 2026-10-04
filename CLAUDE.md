@@ -72,6 +72,7 @@ Read these before proposing anything; they disagree with each other on purpose a
 - `updates.md` — an adversarial verification pass over `Idea.md` (21 Sep 2026). Every load-bearing claim is marked VERIFIED / PARTIALLY VERIFIED / UNVERIFIABLE / CONTRADICTED. **UNVERIFIABLE means "not confirmed," not "false."** Section C ranks the corrections by severity.
 - `CONTEXT.md` — the glossary. Use its terms verbatim in issue titles, test names, identifiers and prose; it lists the synonyms to avoid.
 - `docs/adr/` — decisions already made. If your work contradicts one, say so explicitly rather than quietly overriding it.
+- `docs/architecture/payments.md` — **the payments design**: the Cart, Checkout, PaymentIntent, Hold and Order lifecycles, with state and sequence diagrams, every decision with its rejected alternatives, the failure scenarios, and interview Q&A. **Read it before touching cart, checkout, order, webhook or Razorpay code.** It's a living document: any payment decision (#16, #17, …) extends it in the same pass as its ADR.
 - `.env.example` — every secret the project needs, annotated with the constraint that bites for each one. It is the fastest map of the external dependencies.
 
 Ecosystem facts here are dated and move monthly (UCP releases, handler census, NPCI/Razorpay pilot scope). Re-verify version-dependent claims against primary sources rather than trusting the file's timestamp.
@@ -83,10 +84,25 @@ These are the decisions everything else hangs off. Breaking one silently invalid
 - **Authority is server-side, never in the agent.** The agent — ours or a third party's — only ever *proposes*. Every guardrail, scope check and policy decision is deterministic code in the server, because an agent we don't control never runs our client code. **No LLM anywhere in the request path.**
 - **Refunds are requests, never executions.** The server records and evaluates a refund request and returns a refusal or an approval requirement; a human executes it in the Razorpay dashboard. We never call Razorpay's refund API. This deliberately keeps us outside the payment aggregator's obligations.
 - **Conform to UCP `2026-08-25`, don't invent tool contracts.** Catalog/cart/checkout/order tool names are the standard's. Extensions go under `app.vercel.tillhand.shopping.*` (`suggestions`, `refund_request`). So does our payment handler, since authority binding covers handlers too. `2026-08-25` made namespace authority binding a **MUST**: a capability whose schema host doesn't match its namespace is **silently rejected**, with no error. Business "no" outcomes (out of stock, not found, timeouts) are normal results with `ucp.status: "error"` and `messages[]`, never `isError` or an exception.
-- **`Order` (ours, in Neon) and `PaymentIntent` (Razorpay's) are different objects with different lifecycles.** One Order accumulates several Razorpay orders across retries. Collapsing them produces an ambiguous audit trail.
+- **Our `Checkout` and `Order` (in Neon) and the `PaymentIntent` (one Razorpay order per attempt) are different objects with different lifecycles.** One Checkout accumulates several PaymentIntents across retries, and an Order is created only when one is captured. Collapsing them produces an ambiguous audit trail. See ADR-0007 and `docs/architecture/payments.md`.
 - **The Harness talks to our own MCP server as a real client over HTTP**, not by importing the tool functions — that is what keeps the third-party-agent claim honest. Tools are defined once as plain Python functions; the server and any direct caller wrap that single definition. See `docs/adr/0001`.
-- **Payment completion is asynchronous.** UPI has no agent-suppliable token: the handler returns a payment intent (link/QR), the human approves in their bank app, and the order completes on webhook. Webhooks are at-least-once and can arrive out of order, so **state moves forward only**.
+- **Payment completion is asynchronous.** UPI has no agent-suppliable token: the handler returns a payment intent (link/QR), the human approves in their bank app, and the order completes on webhook. Webhooks are at-least-once and can arrive out of order, so **state moves forward only**, and that's enforced in the database, not just in code. `captured` beats every other state, because UPI can authorise late. A missed webhook is healed by reconcile-on-read and a reconcile script, through the same transition code.
 - **Vectors live in Neon via pgvector**, not a separate vector store. See `docs/adr/0002`.
+
+## Payments: rules any payment code must keep
+
+The full design and its reasons are in `docs/architecture/payments.md` and ADR-0007 (#30). The invariants, short form:
+
+- **Forward only, enforced in the database.** Use a conditional `UPDATE … WHERE status IN (<allowed from>)`, never "set the state from the payload". A trigger rejects backward moves. Every Razorpay webhook is inserted into an append-only `webhook_events` table (PK `x-razorpay-event-id`) **before** it's applied, in the same transaction, so a replay is a no-op.
+- **`captured` beats everything.** A `failed`, `cancelled` or `expired` PaymentIntent may still become `captured` (UPI late authorisation, up to 3 days), and nothing leaves `captured`. Use automatic capture.
+- **Capture always creates an Order,** even for an expired or cancelled Checkout, flagged `late_payment` / `oversold`. We never auto-refund, and we never call the refund API.
+- **Never two payable links.** A retry cancels the previous attempt's link before creating a new one. A refused cancel means that link was paid.
+- **One PaymentIntent per attempt,** with `receipt = {checkout}-{attempt}`, which is Razorpay's idempotency key.
+- **Holds:** `complete_checkout` locks Variant rows `FOR UPDATE` **in id order** (to avoid deadlocks) for milliseconds, checks stock minus active Holds, and inserts a Hold that expires with the link. Expiry is lazy, with no clean-up job. The capture transaction (event insert + transitions + Hold → stock decrement + Order) is the **only** place stock goes down, and stock never goes below zero.
+- **One transition function** serves webhooks, reconcile-on-read (`get_checkout` asks Razorpay after 30 s of staleness) and the reconcile script. Never write a second path.
+- **`complete_checkout` shape:** short DB transaction → commit → Razorpay call (no connection held) → short DB transaction.
+- **Webhook receiver:** HMAC over the raw body with the *webhook* secret, then one DB-only transaction, then 200 within 5 s. Nothing slow inside.
+- **Idempotency keys** (`complete_checkout`, `cancel_checkout`, `cancel_cart`) live in Neon for 48 h, keyed `(key, caller, operation)`, and are written in the same transaction as the effect. A store failure fails closed (503).
 
 ## Coding rules
 

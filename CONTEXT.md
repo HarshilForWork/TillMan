@@ -7,15 +7,23 @@ A product that gives each D2C Merchant its own agent-ready store: a machine-legi
 ### Commerce
 
 **Order**:
-The merchant's own record of what a Customer is buying: line items, quantities, and fulfilment state. Owned by TillHand, stored in Neon. Exists before payment, survives a failed payment, and can be partially refunded.
+The Merchant's permanent record of a **paid** purchase: line items, prices and totals frozen from its Checkout, fulfilment events, and adjustments such as refunds. It's created when a payment is captured, so an Order always means "paid", as in UCP. It's never rewritten, only appended to. It may carry the flags `late_payment` or `oversold` for the Merchant to review.
 _Avoid_: Purchase, transaction, cart (a Cart is a distinct earlier stage)
 
+**Checkout**:
+The purchase being set up and paid for, as in UCP: statuses `incomplete`, `ready_for_complete`, `complete_in_progress`, `completed` and `canceled`. It freezes prices once completion starts, owns every PaymentIntent made for it, and survives failed attempts. It becomes `completed` when one attempt is captured and its Order is created. It lives 6 hours by default.
+_Avoid_: Order (an Order exists only once paid), payment session, basket
+
 **PaymentIntent**:
-The Razorpay-side object representing an attempt to collect money for an Order. An Order references its PaymentIntent; the two have separate lifecycles and an Order may accumulate several over retries.
-_Avoid_: Razorpay order, payment, charge
+One attempt to collect money for a Checkout, mirrored one-to-one by a Razorpay order whose `receipt` is `{checkout}-{attempt}`. A Checkout may accumulate several over retries. Its states move forward only, and `captured` beats every other state, because UPI can authorise late.
+_Avoid_: Razorpay order, payment, charge, attempt (alone)
+
+**Hold**:
+Stock set aside for one PaymentIntent while its payment is in progress, so two Customers can't both pay for the last unit. Created at `complete_checkout` under a row lock lasting milliseconds. It expires with the payment link, plus a short grace period, and becomes the real stock decrement when payment is captured. An expired Hold simply stops counting, so no clean-up job is needed.
+_Avoid_: Reservation, lock (a lock lasts milliseconds; a Hold lasts minutes)
 
 **Cart**:
-The mutable set of Variants a Customer has assembled during a Session, before it is committed into an Order.
+The mutable set of Variants a Customer has assembled, before a Checkout is made from it. Always shows live prices. It lives 7 days by default and is cleared when its Checkout completes.
 _Avoid_: Basket, bag
 
 **Product**:
@@ -27,7 +35,7 @@ A dimension along which a Product's Variants differ, with its allowed values, e.
 _Avoid_: Axis, attribute
 
 **Variant**:
-A specific purchasable configuration of a Product, defined by one chosen value for each of the Product's Options, and carrying its own price and, optionally, a stock level. A Variant with no stock level is **untracked** and always available. Identified by its id; a SKU is an optional merchant-facing code for it.
+A specific purchasable configuration of a Product, defined by one chosen value for each of the Product's Options, and carrying its own price and, optionally, a stock level. A Variant with no stock level is **untracked** and always available. Stock goes down when a payment is captured, and is held by a Hold while a payment is in progress. It never goes below zero. Identified by its id; a SKU is an optional merchant-facing code for it.
 _Avoid_: SKU (the SKU is a label, the Variant is the thing)
 
 **Bundle**:
