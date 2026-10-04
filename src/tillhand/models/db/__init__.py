@@ -1,5 +1,23 @@
 """Row shapes returned by the Neon queries."""
 
-from .catalog import CatalogSyncResult, EmbeddingState, IdMatch, ProductEmbedding, ResolvedProduct
+from .catalog import (
+    BundlePartner,
+    CatalogSyncResult,
+    EmbeddingState,
+    IdMatch,
+    ProductEmbedding,
+    ResolvedProduct,
+    SimilarProduct,
+    SuggestionSource,
+)
 
-__all__ = ["CatalogSyncResult", "EmbeddingState", "IdMatch", "ProductEmbedding", "ResolvedProduct"]
+__all__ = [
+    "BundlePartner",
+    "CatalogSyncResult",
+    "EmbeddingState",
+    "IdMatch",
+    "ProductEmbedding",
+    "ResolvedProduct",
+    "SimilarProduct",
+    "SuggestionSource",
+]

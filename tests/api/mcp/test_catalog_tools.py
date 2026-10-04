@@ -5,24 +5,21 @@ and the MCP runner, over a catalog service backed by the in-memory fakes. Every 
 with a client using the legacy `initialize` handshake, and once with a `2026-07-28` client.
 """
 
-import json
-from contextlib import AbstractAsyncContextManager, nullcontext
+from contextlib import AbstractAsyncContextManager
 from typing import Any
 
 import anyio
 import httpx2
 import pytest
-from fastapi import FastAPI
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import MCPError
 from mcp_types import INTERNAL_ERROR, INVALID_PARAMS
 
-from tests.support.catalog import FakeCatalogStore, FakeEmbedder, seed
+from tests.support.app import HOST, app, catalog_service, services
 from tests.support.mcp import AGENT, MODES, call, serve
 from tests.support.ucp_spec import schema_errors
 from tillhand.core.errors import timeout_error
-from tillhand.main import create_app
 from tillhand.models.ucp import (
     ErrorResponse,
     GetProductArguments,
@@ -33,11 +30,9 @@ from tillhand.models.ucp import (
     SearchResponse,
     ucp_dump,
 )
-from tillhand.services.catalog import MAX_LOOKUP_IDS, CatalogService, StoreCatalogService
+from tillhand.services.catalog import MAX_LOOKUP_IDS, CatalogService
 
 pytestmark = pytest.mark.anyio
-
-HOST = "testserver"
 
 
 @pytest.fixture(params=MODES)
@@ -45,19 +40,10 @@ def mode(request: pytest.FixtureRequest) -> str:
     return request.param
 
 
-def catalog_service(merchant: str = "skincare") -> CatalogService:
-    return StoreCatalogService(FakeCatalogStore(seed(merchant)), FakeEmbedder())
-
-
-def app(service: CatalogService | None = None, **options: Any) -> FastAPI:
-    catalog = service or catalog_service()
-    return create_app(open_catalog=lambda: nullcontext(catalog), allowed_hosts=[HOST], **options)
-
-
 def connect(
     mode: str, service: CatalogService | None = None, **options: Any
 ) -> AbstractAsyncContextManager[Client]:
-    return serve(app(service, **options), host=HOST, mode=mode)
+    return serve(app(services(service), **options), host=HOST, mode=mode)
 
 
 async def test_the_catalog_tools_are_listed_under_their_ucp_names(mode: str) -> None:
@@ -65,7 +51,7 @@ async def test_the_catalog_tools_are_listed_under_their_ucp_names(mode: str) -> 
         listed = await client.list_tools()
 
     tools = {tool.name: tool for tool in listed.tools}
-    assert set(tools) == {"search_catalog", "lookup_catalog", "get_product"}
+    assert set(tools) == {"search_catalog", "lookup_catalog", "get_product", "get_suggestions"}
     for tool in tools.values():
         assert tool.description
         assert set(tool.input_schema["required"]) == {"meta", "catalog"}
@@ -139,15 +125,6 @@ async def test_a_lookup_over_the_batch_limit_is_invalid_params(mode: str) -> Non
             await client.call_tool("lookup_catalog", {"meta": AGENT, "catalog": {"ids": ids}})
 
     assert refused.value.error.code == INVALID_PARAMS
-
-
-async def test_a_call_without_the_ucp_agent_profile_is_invalid_params(mode: str) -> None:
-    async with connect(mode) as client:
-        with pytest.raises(MCPError) as refused:
-            await client.call_tool("search_catalog", {"meta": {}, "catalog": {"query": "serum"}})
-
-    assert refused.value.error.code == INVALID_PARAMS
-    assert "meta.ucp-agent" in json.dumps(refused.value.error.data)
 
 
 class CrashingCatalog:

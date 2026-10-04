@@ -113,7 +113,7 @@ def _meta(capability: str) -> UcpResponseMeta:
     )
 
 
-def _featured_first(product: Product, variants: Sequence[Variant]) -> list[Variant]:
+def featured_first(product: Product, variants: Sequence[Variant]) -> list[Variant]:
     """Available Variants first, each group in the Merchant's order, so the first one is the featured one."""
     return sorted(variants, key=lambda v: not product.is_available(v))
 
@@ -197,7 +197,7 @@ class StoreCatalogService:
         for product in page:
             variants = [v for v in product.variants if filters.admits_variant(v)]
             if variants:
-                products.append(catalog_mapper.search_product(product, _featured_first(product, variants)))
+                products.append(catalog_mapper.search_product(product, featured_first(product, variants)))
         return SearchResponse(
             ucp=_meta(CATALOG_SEARCH),
             products=products,
@@ -245,7 +245,7 @@ class StoreCatalogService:
             variants = [requested]
         elif request.selected:
             selection = relax_selection(product, request.selected, request.preferences)
-            variants = _featured_first(product, _matching(product, selection))
+            variants = featured_first(product, _matching(product, selection))
         else:
             featured = product.featured_variant()
             selection = dict(featured.options)
@@ -271,7 +271,7 @@ def _lookup_product(item: ResolvedProduct, filters: _Filters) -> LookupProduct |
     admitted = [v for v in product.variants if filters.admits_variant(v)]
     if not admitted:
         return None
-    featured = _featured_first(product, admitted)[0]
+    featured = featured_first(product, admitted)[0]
     inputs: dict[str, list[InputCorrelation]] = {}
     for match in item.matches:
         if match.variant_id is None:

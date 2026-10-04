@@ -15,7 +15,7 @@ A product that gives D2C Merchants their own agent-ready store. **Each Merchant 
 
 ## Repository state
 
-**Early code.** A uv project with a `src/` layout (Python 3.11). It holds the UCP wire models (UCP `2026-08-25`), the project constants and Extensions, the error builders, and the **catalog data layer** (#12): the catalog domain model, the Neon schema (Alembic), the SQL, Pinecone embeddings, the `CatalogService` implementation with its UCP mapper, and two seed catalogs. It also holds the **MCP server** (#34): the three UCP catalog tools over stateless streamable HTTP at `/mcp`, inside a FastAPI app (`main.py`) with a `/healthz`. There's no cart, checkout or payments code yet.
+**Early code.** A uv project with a `src/` layout (Python 3.11). It holds the UCP wire models (UCP `2026-08-25`), the project constants and Extensions, the error builders, and the **catalog data layer** (#12): the catalog domain model, the Neon schema (Alembic), the SQL, Pinecone embeddings, the `CatalogService` implementation with its UCP mapper, and two seed catalogs. It also holds the **MCP server** (#34): the three UCP catalog tools plus `get_suggestions` (#46, the Suggestions Extension) over stateless streamable HTTP at `/mcp`, inside a FastAPI app (`main.py`) with a `/healthz`. Every tool call first resolves the Platform's profile (#37): pre-approved in `data/platforms.json` (our Harness), otherwise fetched with SSRF guards (`integrations/profile_fetch.py`); a bad one is JSON-RPC `-32001`. There's no cart, checkout or payments code yet.
 
 ```bash
 uv sync                                         # install from uv.lock
@@ -27,6 +27,7 @@ uv run ruff check . && uv run ruff format --check .
 uv run alembic upgrade head                                      # migrate the database in DATABASE_URL
 uv run python scripts/seed_catalog.py data/seeds/skincare.json  # load a catalog file, embed what changed
 uv run python scripts/search_smoke.py "serum for oily skin"     # real searches, by hand
+uv run python scripts/suggestions_smoke.py [floor]              # every Product's Suggestions and similarities
 TILLHAND_NEON_TESTS=1 uv run pytest -m neon                     # the SQL and the production app, live
 
 uv run uvicorn tillhand.main:production_app --factory --port 8000  # serve /mcp over Neon + Pinecone

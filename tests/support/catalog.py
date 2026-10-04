@@ -10,7 +10,16 @@ from pathlib import Path
 
 from tillhand.core.deadlines import StepTimeout
 from tillhand.integrations.pinecone import EmbeddingError
-from tillhand.models.db import CatalogSyncResult, EmbeddingState, IdMatch, ProductEmbedding, ResolvedProduct
+from tillhand.models.db import (
+    BundlePartner,
+    CatalogSyncResult,
+    EmbeddingState,
+    IdMatch,
+    ProductEmbedding,
+    ResolvedProduct,
+    SimilarProduct,
+    SuggestionSource,
+)
 from tillhand.models.domain import Catalog, Product, category_prefixes
 from tillhand.models.ucp import RequestMeta
 
@@ -130,3 +139,61 @@ class FakeCatalogWriter:
         self.stored.extend(embeddings)
         for e in embeddings:
             self.sources[e.id] = e.source
+
+
+class FakeSuggestionStore:
+    """The Suggestion queries over a catalog, with similarity read from a table: `(a, b)` or `(b, a)`.
+
+    `similar_products` applies only what the service can't apply afterwards: the floor, the excluded
+    ids, and a per-source limit. It leaves discontinued, out-of-stock and same-category Products in,
+    so the tests prove the service filters them. (The SQL filters them too, so its LIMIT counts
+    usable rows; the live `neon` tests check that.)
+    """
+
+    def __init__(self, catalog: Catalog, similarity: dict[tuple[str, str], float]) -> None:
+        self.catalog = catalog
+        self.similarity = similarity
+        self.source_calls: list[list[str]] = []
+        self.similar_calls: list[dict[str, object]] = []
+
+    def _similarity(self, a: str, b: str) -> float:
+        return self.similarity.get((a, b), self.similarity.get((b, a), 0.0))
+
+    async def suggestion_sources(self, ids: list[str]) -> list[SuggestionSource]:
+        self.source_calls.append(ids)
+        by_id = {p.id: p for p in self.catalog.products}
+        return [
+            SuggestionSource(
+                id=id,
+                status=by_id[id].status,
+                categories=by_id[id].categories,
+                bundles=[
+                    BundlePartner(weight=b.weight, product=by_id[b.target])
+                    for b in self.catalog.bundles
+                    if b.source == id
+                ],
+            )
+            for id in dict.fromkeys(ids)
+            if id in by_id
+        ]
+
+    async def similar_products(
+        self, *, sources: dict[str, list[str]], exclude_ids: list[str], floor: float, limit: int
+    ) -> list[SimilarProduct]:
+        self.similar_calls.append(
+            {"sources": sources, "exclude_ids": exclude_ids, "floor": floor, "limit": limit}
+        )
+        found: list[SimilarProduct] = []
+        for source in sources:
+            near = [
+                SimilarProduct(source_id=source, similarity=self._similarity(source, p.id), product=p)
+                for p in self.catalog.products
+                if p.id not in exclude_ids and p.id != source and self._similarity(source, p.id) >= floor
+            ]
+            found.extend(sorted(near, key=lambda s: (-s.similarity, s.product.id))[:limit])
+        return found
+
+
+class TimingOutSuggestionStore(FakeSuggestionStore):
+    async def suggestion_sources(self, ids: list[str]) -> list[SuggestionSource]:
+        raise StepTimeout("neon.suggestion_sources")

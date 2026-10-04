@@ -29,12 +29,12 @@ EXTENSION_AUTHORITY: str = _authority
 @dataclass(frozen=True)
 class Extension:
     name: str
-    extends: str
+    extends: str | tuple[str, ...]
     schema_url: str
     version: str = EXTENSIONS_VERSION
 
 
-def _shopping_extension(capability: str, *, extends: str) -> Extension:
+def _shopping_extension(capability: str, *, extends: str | tuple[str, ...]) -> Extension:
     return Extension(
         name=f"{EXTENSION_AUTHORITY}.shopping.{capability}",
         extends=extends,
@@ -45,7 +45,23 @@ def _shopping_extension(capability: str, *, extends: str) -> Extension:
 REFUND_REQUEST = _shopping_extension("refund_request", extends="dev.ucp.shopping.order")
 """Lets an agent *ask* for a refund. Never executes one: a human refunds in the Razorpay dashboard."""
 
-SUGGESTIONS = _shopping_extension("suggestions", extends="dev.ucp.shopping.catalog")
-"""Suggestions: a Bundle first, similarity when a Product has no curated partners."""
+SUGGESTIONS = _shopping_extension(
+    "suggestions", extends=("dev.ucp.shopping.catalog.search", "dev.ucp.shopping.catalog.lookup")
+)
+"""Suggestions: a Bundle first, similarity when a Product has no curated partners.
+
+Both catalog capabilities are parents. UCP has no `dev.ucp.shopping.catalog` capability, and negotiation
+prunes an Extension none of whose parents survive, so it is kept whenever a Platform negotiates either."""
+
+SUGGESTION_SIMILARITY_FLOOR = 0.48
+"""The cosine similarity a similar Product needs to be suggested at all (#46). A deployment can override
+it (`SUGGESTION_SIMILARITY_FLOOR`), since it depends on the catalog and the embedding model.
+
+Tuned on the skincare seed with `llama-text-embed-v2` (`scripts/suggestions_smoke.py`). Its cross-category
+similarities run from 0.29 to 0.68. Every pair at 0.48 or above agrees on skin type or purpose (the gel
+moisturiser and gel sunscreen at 0.65, the ceramide cleanser and barrier cream at 0.68). The first mismatches
+sit just below: a sensitive-skin sunscreen and an oily-skin moisturiser (0.477), a dry-skin toner and the same
+moisturiser (0.472). At 0.48 every Product but one keeps at least one similar complement; the retinol serum's
+best is 0.473, so it relies on its Bundle."""
 
 EXTENSIONS: tuple[Extension, ...] = (REFUND_REQUEST, SUGGESTIONS)

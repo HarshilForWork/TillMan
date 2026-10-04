@@ -277,6 +277,12 @@ class RequestMeta(Open):
     idempotency_key: str | None = Field(default=None, alias="idempotency-key")
 
 
+class ToolCallMeta(Open):
+    """Only the `meta` of a tool call's arguments: the caller's profile is resolved before the rest."""
+
+    meta: RequestMeta
+
+
 class SearchCatalogArguments(Open):
     meta: RequestMeta
     catalog: SearchRequest

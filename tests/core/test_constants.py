@@ -2,6 +2,7 @@
 
 import pytest
 
+from tests.support.ucp_spec import ucp_capability_names
 from tillhand.core.constants import EXTENSION_AUTHORITY, EXTENSIONS, TILLHAND_SITE, Extension
 from tillhand.utils.namespace import schema_authority_matches
 
@@ -17,7 +18,16 @@ def test_our_extensions_follow_the_naming_convention(extension: Extension) -> No
     assert extension.name.startswith(f"{EXTENSION_AUTHORITY}.")
     service, _, capability = extension.name.removeprefix(f"{EXTENSION_AUTHORITY}.").partition(".")
     assert service == "shopping" and capability and "." not in capability
-    assert extension.extends.startswith("dev.ucp.shopping.")
+    parents = (extension.extends,) if isinstance(extension.extends, str) else extension.extends
+    assert parents and all(parent.startswith("dev.ucp.shopping.") for parent in parents)
+
+
+@pytest.mark.parametrize("extension", EXTENSIONS, ids=lambda e: e.name)
+def test_every_parent_is_a_capability_ucp_defines(extension: Extension) -> None:
+    """Negotiation prunes an Extension none of whose parents survive, so a parent UCP doesn't define
+    would silently drop the Extension for every Platform."""
+    parents = (extension.extends,) if isinstance(extension.extends, str) else extension.extends
+    assert set(parents) <= ucp_capability_names()
 
 
 def test_the_namespace_is_the_tillhand_sites_host_reversed() -> None:

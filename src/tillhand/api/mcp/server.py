@@ -6,8 +6,14 @@ UCP's MCP binding has its own result rules, which the SDK's `MCPServer` tool dec
 - a malformed call is a JSON-RPC error (`-32602`), not an `isError` result.
 
 So each tool is a plain async function over a UCP arguments model (ADR-0001), and this module does
-the one generic job: validate the arguments, run the function under a deadline, and put its UCP
-response on the wire.
+the one generic job: resolve the caller's profile, validate the arguments, run the function under a
+deadline, and put its UCP response on the wire.
+
+The profile comes first (#37). A Platform names its profile URL in `meta.ucp-agent.profile` on every
+call, and UCP says the business MUST fetch and validate it. One that can't be used is a protocol
+failure: JSON-RPC `-32001` with `error.data.code` saying why, before the arguments are even looked at.
+The HTTP status stays 200, as the SDK sends it for every JSON-RPC error; UCP's REST statuses
+(400/424/422) are not mapped onto `/mcp` (decided in #37).
 """
 
 import json
@@ -22,8 +28,9 @@ from mcp.shared.exceptions import MCPError
 from pydantic import BaseModel, ValidationError
 
 from tillhand.core.deadlines import StepTimeout, deadline
-from tillhand.core.errors import RequestTooLarge, timeout_error
-from tillhand.models.ucp import ucp_dump
+from tillhand.core.errors import UCP_DISCOVERY_FAILED, ProfileError, RequestTooLarge, timeout_error
+from tillhand.models.ucp import ToolCallMeta, ucp_dump
+from tillhand.services.profiles import ProfileResolver
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +52,9 @@ class UcpTool(Generic[ArgumentsT]):
         )
 
 
-def build_mcp_server(tools: Sequence[UcpTool[Any]], *, tool_seconds: float) -> Server:
+def build_mcp_server(
+    tools: Sequence[UcpTool[Any]], *, profiles: Callable[[], ProfileResolver], tool_seconds: float
+) -> Server:
     by_name = {tool.name: tool for tool in tools}
 
     async def list_tools(
@@ -59,8 +68,14 @@ def build_mcp_server(tools: Sequence[UcpTool[Any]], *, tool_seconds: float) -> S
         tool = by_name.get(params.name)
         if tool is None:
             raise MCPError(code=types.INVALID_PARAMS, message=f"Unknown tool: {params.name}")
+        arguments = params.arguments or {}
         try:
-            return await _call(tool, params.arguments or {}, tool_seconds)
+            await profiles().resolve(_profile_url(arguments))
+            return await _call(tool, arguments, tool_seconds)
+        except ProfileError as exc:
+            raise MCPError(
+                code=UCP_DISCOVERY_FAILED, message="UCP discovery failed", data=ucp_dump(exc.data())
+            ) from exc
         except MCPError:
             raise
         except Exception as exc:
@@ -70,6 +85,14 @@ def build_mcp_server(tools: Sequence[UcpTool[Any]], *, tool_seconds: float) -> S
             raise MCPError(code=types.INTERNAL_ERROR, message=f"Internal error in {tool.name}") from exc
 
     return Server("tillhand", on_list_tools=list_tools, on_call_tool=call_tool)
+
+
+def _profile_url(arguments: dict[str, Any]) -> str:
+    """`meta.ucp-agent.profile`, read before the arguments are validated: missing is `invalid_profile_url`."""
+    try:
+        return ToolCallMeta.model_validate(arguments).meta.ucp_agent.profile
+    except ValidationError as exc:
+        raise ProfileError("invalid_profile_url", "meta.ucp-agent.profile is missing") from exc
 
 
 async def _call(tool: UcpTool[Any], raw: dict[str, Any], seconds: float) -> types.CallToolResult:

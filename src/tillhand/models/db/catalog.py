@@ -1,8 +1,9 @@
-"""What catalog queries return beyond a whole `Product`: id resolution, syncing and embedding bookkeeping."""
+"""What catalog queries return beyond a whole `Product`: id resolution, Suggestion candidates, syncing and
+embedding bookkeeping."""
 
 from pydantic import BaseModel, ConfigDict
 
-from tillhand.models.domain import Product
+from tillhand.models.domain import Product, ProductStatus
 
 
 class Row(BaseModel):
@@ -40,3 +41,25 @@ class CatalogSyncResult(Row):
     bundles: int
     discontinued_missing: list[str]
     """Products in the database but not in the file: marked discontinued, never deleted."""
+
+
+class BundlePartner(Row):
+    weight: float
+    product: Product
+
+
+class SuggestionSource(Row):
+    """A Product a Suggestion is asked for, with its Bundle partners (whatever their status or stock)."""
+
+    id: str
+    status: ProductStatus
+    categories: list[str]
+    bundles: list[BundlePartner]
+
+
+class SimilarProduct(Row):
+    """A Product near `source_id` in embedding space: cosine similarity, 1 is identical."""
+
+    source_id: str
+    similarity: float
+    product: Product

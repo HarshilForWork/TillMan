@@ -62,6 +62,7 @@ class SpecExample:
     op: str
     direction: str
     payload: Any
+    definition: str | None = None
 
     @property
     def label(self) -> str:
@@ -100,7 +101,25 @@ def _extract(payload: Any, path: str | None) -> Any:
 
 def catalog_doc_examples() -> Iterator[SpecExample]:
     """Every complete, annotated JSON example in the catalog spec pages."""
-    for doc in sorted(CATALOG_DOCS.glob("*.md")):
+    return doc_examples(sorted(CATALOG_DOCS.glob("*.md")))
+
+
+def overview_examples() -> Iterator[SpecExample]:
+    """Every complete, annotated JSON example in the overview page (profiles, transport errors)."""
+    return doc_examples([OVERVIEW], lenient=True)
+
+
+def _is_json(text: str) -> bool:
+    try:
+        json.loads(text)
+    except ValueError:
+        return False
+    return True
+
+
+def doc_examples(docs: list[Path], *, lenient: bool = False) -> Iterator[SpecExample]:
+    """`lenient` skips blocks that aren't JSON as written (the overview has HTTP-only and tabbed ones)."""
+    for doc in docs:
         pending: dict[str, str] | None = None
         in_json = False
         block: list[str] = []
@@ -111,13 +130,14 @@ def catalog_doc_examples() -> Iterator[SpecExample]:
                     in_json = False
                     if pending is not None and "skip" not in pending:
                         text = _canonical("\n".join(block))
-                        if text is not None:
+                        if text is not None and (not lenient or _is_json(text)):
                             yield SpecExample(
                                 source=doc.name,
                                 schema=pending["schema"],
                                 op=pending.get("op", "read"),
                                 direction=pending.get("direction", "response"),
                                 payload=_extract(json.loads(text), pending.get("extract")),
+                                definition=pending.get("def"),
                             )
                     pending = None
                 else:
@@ -131,6 +151,16 @@ def catalog_doc_examples() -> Iterator[SpecExample]:
                 in_json, block = True, []
             elif stripped:
                 pending = None
+
+
+@cache
+def ucp_capability_names() -> frozenset[str]:
+    """Every `dev.ucp.*` capability name the vendored spec's docs and schemas mention."""
+    pattern = re.compile(r"dev\.ucp\.[a-z_]+(?:\.[a-z_]+)+")
+    names: set[str] = set()
+    for path in [*(SPEC_ROOT / "docs").rglob("*.md"), *SCHEMA_ROOT.rglob("*.json")]:
+        names.update(pattern.findall(path.read_text(encoding="utf-8")))
+    return frozenset(names)
 
 
 def scaffold(name: str) -> Any:

@@ -1,0 +1,51 @@
+{
+  "platforms": [
+    {
+      "profile_url": "https://tillhand.vercel.app/profiles/harness.json",
+      "note": "TillHand's own Harness (src/tillhand_agent), which talks to this server over the public door like any Platform. Pre-approved so its calls never wait on a fetch; the TillHand site will serve this same document at this URL (#36).",
+      "profile": {
+        "ucp": {
+          "version": "2026-08-25",
+          "services": {
+            "dev.ucp.shopping": [
+              {
+                "version": "2026-08-25",
+                "spec": "https://ucp.dev/2026-08-25/specification/overview",
+                "transport": "mcp",
+                "schema": "https://ucp.dev/2026-08-25/services/shopping/mcp.openrpc.json"
+              }
+            ]
+          },
+          "capabilities": {
+            "dev.ucp.shopping.catalog.search": [
+              {
+                "version": "2026-08-25",
+                "spec": "https://ucp.dev/2026-08-25/specification/shopping/catalog/search",
+                "schema": "https://ucp.dev/2026-08-25/schemas/shopping/catalog_search.json"
+              }
+            ],
+            "dev.ucp.shopping.catalog.lookup": [
+              {
+                "version": "2026-08-25",
+                "spec": "https://ucp.dev/2026-08-25/specification/shopping/catalog/lookup",
+                "schema": "https://ucp.dev/2026-08-25/schemas/shopping/catalog_lookup.json"
+              }
+            ],
+            "app.vercel.tillhand.shopping.suggestions": [
+              {
+                "version": "2026-09-24",
+                "spec": "https://tillhand.vercel.app/specs/shopping/suggestions",
+                "schema": "https://tillhand.vercel.app/schemas/shopping/suggestions.json",
+                "extends": [
+                  "dev.ucp.shopping.catalog.search",
+                  "dev.ucp.shopping.catalog.lookup"
+                ]
+              }
+            ]
+          },
+          "payment_handlers": {}
+        }
+      }
+    }
+  ]
+}

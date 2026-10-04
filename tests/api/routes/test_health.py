@@ -1,18 +1,13 @@
-from contextlib import nullcontext
-
 import httpx2
 import pytest
 
-from tests.support.catalog import FakeCatalogStore, FakeEmbedder, seed
-from tillhand.main import create_app
-from tillhand.services.catalog import StoreCatalogService
+from tests.support.app import app as build_app
 
 pytestmark = pytest.mark.anyio
 
 
 async def test_the_health_check_answers_while_the_app_is_up() -> None:
-    catalog = StoreCatalogService(FakeCatalogStore(seed("skincare")), FakeEmbedder())
-    app = create_app(open_catalog=lambda: nullcontext(catalog), allowed_hosts=["testserver"])
+    app = build_app()
     async with (
         app.router.lifespan_context(app),
         httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://testserver") as http,

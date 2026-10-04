@@ -13,10 +13,18 @@ from pydantic import TypeAdapter
 
 from tillhand.core.deadlines import NEON_QUERY_SECONDS, NEON_SYNC_SECONDS, deadline
 from tillhand.integrations.neon.pool import Pool
-from tillhand.models.db import CatalogSyncResult, EmbeddingState, IdMatch, ProductEmbedding, ResolvedProduct
+from tillhand.models.db import (
+    CatalogSyncResult,
+    EmbeddingState,
+    IdMatch,
+    ProductEmbedding,
+    ResolvedProduct,
+    SimilarProduct,
+    SuggestionSource,
+)
 from tillhand.models.domain import Catalog, Product, category_prefixes
 
-_PRODUCT_JSON = """
+_PRODUCT_JSONB = """
 jsonb_build_object(
     'id', p.id,
     'handle', p.handle,
@@ -44,8 +52,9 @@ jsonb_build_object(
         ) order by v.position)
         from variants v where v.product_id = p.id
     )
-)::text
+)
 """
+_PRODUCT_JSON = f"{_PRODUCT_JSONB}::text"
 
 # $1 category keys (null: no filter), $2/$3 price bounds in minor units (null: unbounded).
 # Discontinued Products are never searched (#8). A price filter keeps a Product when any Variant is
@@ -100,7 +109,67 @@ from products p
 where p.id = $1 or p.id = (select v.product_id from variants v where v.id = $1)
 """
 
+# Suggestions (#46). $1: the source Product ids. Each found source comes back with its strongest
+# Bundle partners, whatever their status or stock: the service filters them, so the rule lives in one
+# place. Both are bounded: at most `MAX_BUNDLES_PER_SOURCE` partners each (a curated catalog has a
+# handful), and the caller sends at most 10 ids. Bundles are found through their primary key,
+# (source_id, target_id).
+_SUGGESTION_SOURCES = f"""
+select jsonb_build_object(
+    'id', s.id,
+    'status', s.status,
+    'categories', s.categories,
+    'bundles', coalesce((
+        select jsonb_agg(jsonb_build_object('weight', b.weight, 'product', {_PRODUCT_JSONB})
+                         order by b.weight desc, b.target_id)
+        from (
+            select * from bundles where source_id = s.id order by weight desc, target_id limit $2
+        ) b join products p on p.id = b.target_id
+    ), '[]'::jsonb)
+)::text as source
+from products s
+where s.id = any($1::text[])
+limit 50
+"""
+
+# For each source, its nearest Products by cosine similarity (pgvector `<=>` is cosine distance, so
+# similarity is 1 - distance), through the HNSW index. $1/$2 pair each source id with one of its
+# category keys (one pair per key), $3 ids to leave out, $4 the similarity floor, $5 how many per source.
+#
+# The WHERE repeats the service's filters (active, a Variant available, outside the source's own
+# category) so that LIMIT counts rows the service will keep; the service still applies them, as the
+# one authority. "Outside": none of the candidate's category prefixes is one of that source's
+# categories, so a subcategory of the source's category counts as the same category.
+_SIMILAR_PRODUCTS = f"""
+with own as (select * from unnest($1::text[], $2::text[]) as k(source_id, category_key))
+select jsonb_build_object('source_id', src.id, 'similarity', near.similarity, 'product', near.product)::text
+    as similar
+from products src
+cross join lateral (
+    select 1 - (p.embedding <=> src.embedding) as similarity, {_PRODUCT_JSONB} as product
+    from products p
+    where p.status = 'active'
+      and p.embedding is not null
+      and not (p.id = any($1::text[]) or p.id = any($3::text[]))
+      and not exists (
+          select 1 from own where own.source_id = src.id and own.category_key = any(p.category_prefixes)
+      )
+      and exists (
+          select 1 from variants v where v.product_id = p.id and (v.stock is null or v.stock > 0)
+      )
+    order by p.embedding <=> src.embedding  -- distance alone, or the HNSW index can't serve it
+    limit $5
+) near
+where src.id = any($1::text[])
+  and src.embedding is not null
+  and near.similarity >= $4
+order by near.similarity desc, src.id, near.product->>'id'
+"""
+
 _MATCHES = TypeAdapter(list[IdMatch])
+
+MAX_BUNDLES_PER_SOURCE = 50
+"""A guard, not a ranking rule: far more than a curated catalog pairs with one Product."""
 
 
 def vector_literal(vector: list[float]) -> str:
@@ -150,6 +219,23 @@ class NeonCatalogStore:
         async with deadline("neon.get_product", NEON_QUERY_SECONDS), self._pool.acquire() as conn:
             row = await conn.fetchrow(_GET, id)
         return None if row is None else Product.model_validate_json(row["product"])
+
+    async def suggestion_sources(self, ids: list[str]) -> list[SuggestionSource]:
+        """The Products among `ids`, with their strongest Bundle partners. Unknown ids are just absent."""
+        async with deadline("neon.suggestion_sources", NEON_QUERY_SECONDS), self._pool.acquire() as conn:
+            rows = await conn.fetch(_SUGGESTION_SOURCES, ids, MAX_BUNDLES_PER_SOURCE)
+        return [SuggestionSource.model_validate_json(row["source"]) for row in rows]
+
+    async def similar_products(
+        self, *, sources: dict[str, list[str]], exclude_ids: list[str], floor: float, limit: int
+    ) -> list[SimilarProduct]:
+        """Each source's nearest available Products outside its own categories, at or above `floor`."""
+        pairs = [(source, key) for source, keys in sources.items() for key in keys]
+        source_ids = [source for source, _ in pairs]
+        category_keys = [key for _, key in pairs]
+        async with deadline("neon.similar_products", NEON_QUERY_SECONDS), self._pool.acquire() as conn:
+            rows = await conn.fetch(_SIMILAR_PRODUCTS, source_ids, category_keys, exclude_ids, floor, limit)
+        return [SimilarProduct.model_validate_json(row["similar"]) for row in rows]
 
     async def sync_catalog(self, catalog: Catalog) -> CatalogSyncResult:
         """Make the database match a catalog file, leaving embeddings of unchanged Products in place.

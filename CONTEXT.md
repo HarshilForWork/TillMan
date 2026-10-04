@@ -80,6 +80,10 @@ _Avoid_: Test brand, sample store, our brand
 A third-party agent or app, such as Google's or ChatGPT's, that shops with a Merchant through the public UCP door. It identifies itself on every request with a profile URL.
 _Avoid_: Client, consumer, bot
 
+**Profile**:
+The JSON document a Platform publishes at a URL to say who it is and what it supports, as UCP defines it. The Platform names that URL on every request, and the server validates the profile before any tool runs, or refuses the call with the reason it can't be used. A **pre-approved** Platform's profile is registered in advance (`data/platforms.json`) and never fetched.
+_Avoid_: Manifest, agent card
+
 **Merchant assistant**:
 The Merchant's own chatbot, on its site or on WhatsApp, which uses the Merchant door with a Merchant API key instead of a profile URL. Claim A is about this.
 _Avoid_: Chatbot (alone), widget, our agent

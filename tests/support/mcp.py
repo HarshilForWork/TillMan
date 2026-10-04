@@ -9,11 +9,16 @@ from fastapi import FastAPI
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
+from tests.support.profiles import PLATFORM_URL
+
 MODES = ["legacy", "2026-07-28"]
 """The two protocol eras every tool test runs in: the legacy `initialize` handshake, and 2026-07-28."""
 
-AGENT = {"ucp-agent": {"profile": "https://platform.example/profiles/agent.json"}}
-"""`meta` as a Platform sends it on the public UCP door."""
+AGENT = {"ucp-agent": {"profile": PLATFORM_URL}}
+"""`meta` as a Platform sends it on the public UCP door. The test app pre-approves this profile."""
+
+HARNESS = {"ucp-agent": {"profile": "https://tillhand.vercel.app/profiles/harness.json"}}
+"""`meta` as our own Harness sends it: the production app pre-approves it in `data/platforms.json`."""
 
 
 @asynccontextmanager
@@ -28,9 +33,11 @@ async def serve(app: FastAPI, *, host: str, mode: str) -> AsyncIterator[Client]:
         yield client
 
 
-async def call(client: Client, tool: str, catalog: dict[str, Any]) -> dict[str, Any]:
+async def call(
+    client: Client, tool: str, catalog: dict[str, Any], *, meta: dict[str, Any] = AGENT
+) -> dict[str, Any]:
     """A tool call that must succeed at the protocol level; returns its `structuredContent`."""
-    result = await client.call_tool(tool, {"meta": AGENT, "catalog": catalog})
+    result = await client.call_tool(tool, {"meta": meta, "catalog": catalog})
     assert not result.is_error
     assert isinstance(result.structured_content, dict)
     return result.structured_content
