@@ -232,6 +232,14 @@ class UcpResponseMeta(Open):
     map_order: dict[str, list[str]] | None = None
 
 
+class ProtocolErrorData(Closed):
+    """`error.data` of a JSON-RPC `-32000` protocol error, e.g. a reused idempotency key or a 503."""
+
+    code: str
+    retry_after: Annotated[int, Field(ge=0)] | None = None
+    """Seconds to wait before retrying (UCP: `error.data.retry_after` for 429 and 503)."""
+
+
 class ErrorResponse(Closed):
     """A business outcome that is a "no" (`common/types/error_response.json`).
 

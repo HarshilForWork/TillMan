@@ -50,8 +50,10 @@ async def test_the_catalog_tools_are_listed_under_their_ucp_names(mode: str) -> 
     async with connect(mode) as client:
         listed = await client.list_tools()
 
-    tools = {tool.name: tool for tool in listed.tools}
-    assert set(tools) == {"search_catalog", "lookup_catalog", "get_product", "get_suggestions"}
+    # The whole list is checked against the registry (test_tool_access.py); these take `catalog`.
+    catalog = {"search_catalog", "lookup_catalog", "get_product", "get_suggestions"}
+    tools = {tool.name: tool for tool in listed.tools if tool.name in catalog}
+    assert set(tools) == catalog
     for tool in tools.values():
         assert tool.description
         assert set(tool.input_schema["required"]) == {"meta", "catalog"}

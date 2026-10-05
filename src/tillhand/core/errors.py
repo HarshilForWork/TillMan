@@ -11,6 +11,7 @@ from tillhand.models.ucp import (
     MessageError,
     ProfileErrorCode,
     ProfileErrorData,
+    ProtocolErrorData,
     Severity,
     UcpResponseMeta,
 )
@@ -24,6 +25,38 @@ UCP_DISCOVERY_FAILED = -32001
 class RequestTooLarge(ValueError):
     """A request over one of our batch limits. Not a business outcome: the MCP layer maps it to
     JSON-RPC `-32602` (Invalid params), as catalog/mcp.md requires for oversized lookups."""
+
+
+UCP_PROTOCOL_ERROR = -32000
+"""The JSON-RPC code for UCP's other protocol errors, such as 409 and 503 (overview, "Error Codes")."""
+
+RETRY_AFTER_SECONDS = 5
+
+
+class IdempotencyConflict(Exception):
+    """An idempotency key reused with a different request: refused, not replayed (#30 decision 11).
+
+    A protocol failure, not a business "no": JSON-RPC `-32000` (REST would say 409), with
+    `error.data.code` `idempotency_key_reused`. The caller must use a fresh key for a new request."""
+
+    message = "Idempotency key reused with a different request"
+
+    def data(self) -> ProtocolErrorData:
+        return ProtocolErrorData(code="idempotency_key_reused")
+
+
+class ServiceUnavailable(Exception):
+    """A store a write depends on can't be reached, so the write is refused rather than risked: it fails
+    closed (#30 decision 11). JSON-RPC `-32000` (REST would say 503), with `error.data.retry_after`."""
+
+    message = "Service unavailable"
+
+    def __init__(self, step: str) -> None:
+        super().__init__(f"{step} is unavailable")
+        self.step = step
+
+    def data(self) -> ProtocolErrorData:
+        return ProtocolErrorData(code="service_unavailable", retry_after=RETRY_AFTER_SECONDS)
 
 
 class ProfileError(Exception):

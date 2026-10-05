@@ -11,6 +11,7 @@ from .catalog import (
     category_key,
     category_prefixes,
 )
+from .owner import Owner
 from .platforms import PlatformsFile, PreApprovedPlatform
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "Bundle",
     "Catalog",
     "Option",
+    "Owner",
     "PlatformsFile",
     "PreApprovedPlatform",
     "Product",

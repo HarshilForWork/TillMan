@@ -17,6 +17,9 @@ CATALOG_SEARCH = "dev.ucp.shopping.catalog.search"
 CATALOG_LOOKUP = "dev.ucp.shopping.catalog.lookup"
 """The UCP catalog capabilities we implement: `search_catalog`, and `lookup_catalog` with `get_product`."""
 
+CART = "dev.ucp.shopping.cart"
+"""`create_cart`, `get_cart`, `update_cart` and `cancel_cart` (#50)."""
+
 TILLHAND_SITE = "https://tillhand.vercel.app"
 EXTENSIONS_VERSION = "2026-09-24"
 

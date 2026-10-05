@@ -247,6 +247,22 @@ The agent calls `complete_checkout` with key K1. The server creates PaymentInten
 - **A genuinely new attempt** (after a failure) uses a **new** key (UCP MUST).
 - **If the idempotency store itself is unavailable,** the call **fails closed** (503). We never risk a double effect.
 
+**As built for `cancel_cart` (#50); `complete_checkout` and `cancel_checkout` reuse it (#51):**
+
+| Step, inside **one** transaction | Why |
+|---|---|
+| 1. Look up `(key, caller, operation)` among rows younger than 48 h | A retry finds the first answer |
+| 2. Found with the same request hash → return the stored response; with another hash → `IdempotencyConflict` | Replay, or refuse a reused key (`-32000`, `data.code = idempotency_key_reused`) |
+| 3. Otherwise do the effect (delete the Cart), render the response (CPU only), and insert the key row | Effect and key commit together or not at all |
+| 4. The insert replaces a row only once it's older than 48 h. A **fresh** row held by a concurrent retry updates nothing, so we roll back and replay theirs | Two simultaneous retries with one key still give one effect |
+| 5. Sweep up to 100 expired key rows | Storage stays bounded with no clean-up job |
+
+- **The request hash** is SHA-256 over the request minus `meta`, so the same key for another Cart is a conflict.
+- **The caller is the Owner (#42),** in two columns. A key is never shared across callers: B reusing A's key value is just a new key.
+- **The response is stored as text, exactly as sent.** It's the one stored value that isn't relational, because its only job is to be replayed unchanged.
+- **Fail closed:** a connection failure is `ServiceUnavailable` → `-32000`, `data = {code: service_unavailable, retry_after: 5}`. Nothing was applied, so the retry is safe.
+- **Proven live:** when rendering fails inside the transaction, neither the delete nor the key survives (`tests/integrations/test_neon_carts.py`).
+
 ### 4.9 Refund, executed by a human
 
 1. An agent calls `request_refund` (#43). The server refuses it, with a reason, or records it as `pending_approval`. Rule R2 ("never paid") can no longer trigger, because every Order is paid.
@@ -304,18 +320,19 @@ UPDATE payment_intents
 
 ## 8. Data model sketch
 
-*A sketch; the build tickets finalise columns. Every id is a random UUID (#11), and every owned row records its owner (#42).*
+*A sketch; the build tickets finalise columns (✅ = built). Every id is a random UUID (#11), and every owned row records its owner (#42) as plain columns, never an encoded string: all state is relational (owner's rule, 5 Oct 2026).*
 
 | Table | Key columns | Constraints and indexes |
 |---|---|---|
-| `carts` | id, owner, lines (variant, qty), expires_at | Index on owner; expiry |
+| `carts` ✅ #50 | id (random UUID), owner_platform, owner_customer (null = guest), currency, created_at, updated_at, expires_at | Every lookup is by id **and** owner; an expired row is simply not found |
+| `cart_lines` ✅ #50 | cart_id, position, variant_id, quantity; **no price** (every read joins the live catalog) | PK (cart_id, position); unique (cart_id, variant_id); cascade on Cart delete; no FK to `variants`, so a Variant removed by a re-seed is reported, not silently lost |
 | `checkouts` | id, cart_id, owner, status, line snapshot, totals, expires_at, last_reconciled_at | Partial unique index: **one incomplete Checkout per cart_id**; status trigger |
 | `payment_intents` | id, checkout_id, attempt_no, receipt, razorpay_order_id, link_id, link_url, status, timestamps | Unique (checkout_id, attempt_no); unique receipt; status trigger |
 | `holds` | id, payment_intent_id, variant_id, qty, expires_at, outcome (null / converted / released) | Index on (variant_id, expires_at) where outcome is null, for the availability query |
 | `orders` | id, checkout_id, owner, line snapshot, totals, payment_intent_id, flags | Unique checkout_id (one Order per Checkout) |
 | `order_events` | order_id, kind (fulfilment / adjustment), payload, created_at | Append-only |
 | `webhook_events` | event_id (PK), type, payload, received_at, applied | Append-only; the PK is the dedupe key |
-| `idempotency_keys` | (key, caller, operation) PK, request_hash, response, created_at | Rows older than 48 h are deleted |
+| `idempotency_keys` ✅ #50 | id, key, owner_platform, owner_customer (null = guest), operation, request_hash, response (text, exactly as sent), created_at | `unique nulls not distinct (key, owner_platform, owner_customer, operation)`, so a guest's key is as unique as a Customer's; rows older than 48 h are ignored, and each write sweeps up to 100 of them |
 
 The **availability query** is `stock - coalesce(sum(qty) filter (where outcome is null and expires_at > now()), 0)`. Untracked Variants (stock is null) skip it entirely.
 

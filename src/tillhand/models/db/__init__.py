@@ -1,5 +1,13 @@
 """Row shapes returned by the Neon queries."""
 
+from .cart import (
+    CartOperation,
+    CartVariant,
+    IdempotencyKey,
+    NewCartLine,
+    StoredCart,
+    StoredCartLine,
+)
 from .catalog import (
     BundlePartner,
     CatalogSyncResult,
@@ -13,11 +21,17 @@ from .catalog import (
 
 __all__ = [
     "BundlePartner",
+    "CartOperation",
+    "CartVariant",
     "CatalogSyncResult",
     "EmbeddingState",
     "IdMatch",
+    "IdempotencyKey",
+    "NewCartLine",
     "ProductEmbedding",
     "ResolvedProduct",
     "SimilarProduct",
+    "StoredCart",
+    "StoredCartLine",
     "SuggestionSource",
 ]

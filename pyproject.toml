@@ -42,6 +42,8 @@ markers = ["neon: runs against the live Neon database (opt-in: TILLHAND_NEON_TES
 include = ["src", "tests", "scripts", "migrations"]
 pythonVersion = "3.11"
 typeCheckingMode = "standard"
+# An ignore that stops being needed is an error: tests/integrations/owner_required_typecheck.py relies on it.
+reportUnnecessaryTypeIgnoreComment = "error"
 venvPath = "."
 venv = ".venv"
 

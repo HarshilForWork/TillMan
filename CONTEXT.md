@@ -50,6 +50,10 @@ _Avoid_: Recommendation, upsell (as a noun)
 The share of Carts deliberately shown no Suggestions, so a Merchant can measure what Suggestions actually add. It's chosen per Cart, so a whole shopping journey is consistently in or out.
 _Avoid_: Control group (that is the eval suite's simulated comparison), A/B test
 
+**Owner**:
+Whoever a Cart (and later a Checkout, Order or Refund request) belongs to: the Platform that created it, plus the Customer when the server knows one. Only its Owner may read or change it. Anyone else is told it doesn't exist, in exactly the words used for an id that never existed.
+_Avoid_: User, tenant, account (a Merchant is never an Owner here: each deployment serves one)
+
 **Customer**:
 The person on whose behalf the agent acts, and to whom Orders and memory are scoped. The server knows who a Customer is only through a Customer token, or, on the Merchant door, the Merchant's own id for them. An email or phone number typed at checkout is never proof. Without either, the caller shops as a guest.
 _Avoid_: User, client, buyer, account

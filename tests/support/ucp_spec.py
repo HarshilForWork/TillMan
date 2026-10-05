@@ -22,6 +22,7 @@ from tillhand.core.constants import UCP_VERSION
 SPEC_ROOT = Path(__file__).resolve().parents[2] / "vendor" / "ucp" / f"v{UCP_VERSION}"
 SCHEMA_ROOT = SPEC_ROOT / "source" / "schemas"
 CATALOG_DOCS = SPEC_ROOT / "docs" / "specification" / "shopping" / "catalog"
+CART_DOCS = SPEC_ROOT / "docs" / "specification" / "shopping" / "cart"
 OVERVIEW = SPEC_ROOT / "docs" / "specification" / "overview" / "index.md"
 SCAFFOLDS = SPEC_ROOT / "scripts" / "scaffolds"
 SCHEMA_BASE_URL = "https://ucp.dev/schemas/"
@@ -102,6 +103,11 @@ def _extract(payload: Any, path: str | None) -> Any:
 def catalog_doc_examples() -> Iterator[SpecExample]:
     """Every complete, annotated JSON example in the catalog spec pages."""
     return doc_examples(sorted(CATALOG_DOCS.glob("*.md")))
+
+
+def cart_doc_examples() -> Iterator[SpecExample]:
+    """Every complete, annotated JSON example in the cart spec pages (`index.md`, `mcp.md`)."""
+    return doc_examples(sorted(CART_DOCS.glob("*.md")))
 
 
 def overview_examples() -> Iterator[SpecExample]:

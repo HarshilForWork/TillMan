@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     """The cosine similarity a similar Product needs to be suggested (#46). It depends on the catalog and the
     embedding model, so each Merchant's deployment may tune it; the default was tuned on the skincare seed."""
 
+    cart_lifetime_days: Annotated[int, Field(ge=1, le=90)] = 7
+    """How long a Cart lives after its last change (#30 decision 2): `create_cart` and `update_cart` push its
+    `expires_at` this far ahead; reads don't."""
+
     pinecone_api_key: SecretStr
     embedding_model: Literal["llama-text-embed-v2"] = "llama-text-embed-v2"
     embedding_dimension: Annotated[int, Field(ge=EMBEDDING_DIMENSION, le=EMBEDDING_DIMENSION)] = (
