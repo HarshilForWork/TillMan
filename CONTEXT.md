@@ -7,7 +7,7 @@ A product that gives each D2C Merchant its own agent-ready store: a machine-legi
 ### Commerce
 
 **Order**:
-The Merchant's permanent record of a **paid** purchase: line items, prices and totals frozen from its Checkout, fulfilment events, and adjustments such as refunds. It's created when a payment is captured, so an Order always means "paid", as in UCP. It's never rewritten, only appended to. It may carry the flags `late_payment` or `oversold` for the Merchant to review.
+The Merchant's permanent record of a **paid** purchase: line items, prices and totals frozen from its Checkout, fulfilment events, and adjustments such as refunds. It's created when a payment is captured, so an Order always means "paid", as in UCP. It's never rewritten, only appended to. It may carry the flags `late_payment`, `oversold` or `duplicate_payment` (a second capture for the same Checkout, which never makes a second Order) for the Merchant to review.
 _Avoid_: Purchase, transaction, cart (a Cart is a distinct earlier stage)
 
 **Checkout**:
@@ -15,11 +15,15 @@ The purchase being set up and paid for, as in UCP: statuses `incomplete`, `ready
 _Avoid_: Order (an Order exists only once paid), payment session, basket
 
 **PaymentIntent**:
-One attempt to collect money for a Checkout, mirrored one-to-one by a Razorpay order whose `receipt` is `{checkout}-{attempt}`. A Checkout may accumulate several over retries. Its states move forward only, and `captured` beats every other state, because UPI can authorise late.
+One attempt to collect money for a Checkout, mirrored one-to-one by a Razorpay order whose `receipt` is `{checkout}-{attempt}`. A Checkout may accumulate several over retries. Its states move forward only, and `captured` beats every other state, because UPI can authorise late. The human pays it on its Pay page.
 _Avoid_: Razorpay order, payment, charge, attempt (alone)
 
+**Pay page**:
+The page on the Merchant's own deployment (`/pay/{payment_intent}`) where a human pays one PaymentIntent, through Razorpay's checkout widget: a test UPI id in test mode, a QR code or UPI app live. Its URL is what `complete_checkout`'s Action and `continue_url` point at. It refuses to open once its attempt is superseded or its approval window (15 min, shrinking to the Checkout's remaining time) has ended.
+_Avoid_: Payment link (that's Razorpay's own product, our fallback), checkout page
+
 **Hold**:
-Stock set aside for one PaymentIntent while its payment is in progress, so two Customers can't both pay for the last unit. Created at `complete_checkout` under a row lock lasting milliseconds. It expires with the payment link, plus a short grace period, and becomes the real stock decrement when payment is captured. An expired Hold simply stops counting, so no clean-up job is needed.
+Stock set aside for one PaymentIntent while its payment is in progress, so two Customers can't both pay for the last unit. Created at `complete_checkout` under a row lock lasting milliseconds. It expires with its PaymentIntent's approval window, plus 2 minutes, and becomes the real stock decrement when payment is captured. An expired Hold simply stops counting, so no clean-up job is needed.
 _Avoid_: Reservation, lock (a lock lasts milliseconds; a Hold lasts minutes)
 
 **Cart**:
@@ -41,6 +45,10 @@ _Avoid_: SKU (the SKU is a label, the Variant is the thing)
 **Bundle**:
 A curated, directed pairing from one Product to another that the Merchant recommends buying together, e.g. cleanser → moisturiser. Always Product-to-Product; the Variant is chosen afterwards.
 _Avoid_: Combo, routine, kit
+
+**Bundle proposal**:
+A Bundle a model has drafted offline from the catalog text, waiting for the Merchant to approve, edit or reject it. Proposals sit in a file in the catalog's own format, and only approved ones are merged into the catalog and seeded. Code validates every proposal (both Products active, different categories, no duplicate, weight 0.5–0.9) before the Merchant sees it.
+_Avoid_: AI bundle, suggested bundle, auto-bundle
 
 **Suggestion**:
 A Product offered to the Customer as an upsell or cross-sell, whatever produced it: a Bundle, or similarity when no Bundle exists. Chosen by deterministic code, never a model. It always carries its reason (what produced it, and from which Product), so the agent explains it rather than inventing a reason.

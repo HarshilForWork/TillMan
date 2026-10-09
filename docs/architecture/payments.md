@@ -1,13 +1,13 @@
 # Payments architecture
 
-**Status:** decided in [#30](https://github.com/HarshilForWork/TillMan/issues/30) (4 Oct 2026). It's a living document: [#16](https://github.com/HarshilForWork/TillMan/issues/16) (the payment handler) and [#17](https://github.com/HarshilForWork/TillMan/issues/17) (payments in the eval suite) extend it when they're decided. Anything still open is marked **⏳ #N**.
+**Status:** decided in [#30](https://github.com/HarshilForWork/TillMan/issues/30) (4 Oct 2026) and [#16](https://github.com/HarshilForWork/TillMan/issues/16) (10 Oct 2026, the UPI handler, §11). Where older sections say "link", read the attempt's **pay page** (§11.2); Razorpay Payment Links are only the fallback. It's a living document: [#16](https://github.com/HarshilForWork/TillMan/issues/16) (the payment handler) and [#17](https://github.com/HarshilForWork/TillMan/issues/17) (payments in the eval suite) extend it when they're decided. Anything still open is marked **⏳ #N**.
 **Short form:** ADR-0007. **Terms:** `CONTEXT.md`. **Spec:** UCP `2026-08-25`. **PSP:** Razorpay, test mode.
 
 ---
 
 ## 0. In one paragraph
 
-A Customer's agent builds a **Cart**, turns it into a **Checkout** (prices are snapshotted), and calls `complete_checkout`. The server places a **Hold** on the stock, creates a **PaymentIntent** (one Razorpay order, one payment link), and hands the link to the human. The human approves in their UPI app. Razorpay tells us by webhook, which can be late, duplicated or out of order. When a payment is **captured**, one short database transaction records the event, moves the PaymentIntent and Checkout forward, converts the Hold into a stock decrement, and creates the **Order**. A failed attempt sends the Checkout back for a retry, with the old link cancelled first. Money that arrives late always becomes an Order, flagged for the Merchant. We never move money back ourselves: refunds are a human's job in the Razorpay dashboard.
+A Customer's agent builds a **Cart**, turns it into a **Checkout** (prices are snapshotted), and calls `complete_checkout`. The server places a **Hold** on the stock, creates a **PaymentIntent** (one Razorpay order), and returns an **Action** pointing at the attempt's **pay page** (§11), which the agent hands to the human. The human approves in their UPI app. Razorpay tells us by webhook, which can be late, duplicated or out of order. When a payment is **captured**, one short database transaction records the event, moves the PaymentIntent and Checkout forward, converts the Hold into a stock decrement, and creates the **Order**. A failed attempt sends the Checkout back for a retry, and the old attempt is superseded first. Money that arrives late, or twice, is always recorded and flagged for the Merchant. We never move money back ourselves: refunds are a human's job in the Razorpay dashboard.
 
 ### The invariants (the rules that must never break)
 
@@ -15,9 +15,9 @@ A Customer's agent builds a **Cart**, turns it into a **Checkout** (prices are s
 |---|---|---|
 | **I1** | State moves **forward only** | Conditional updates, a database trigger, and an append-only event log (§6) |
 | **I2** | **`captured` beats everything:** once money is captured, nothing undoes it | The transition table; nothing leaves `captured` |
-| **I3** | **Never two payable links** for one Checkout | A retry cancels the previous link before creating a new one |
+| **I3** | **Never two payable attempts** for one Checkout | A retry supersedes the previous attempt, and its pay page refuses it. The widget times out with the attempt. A payment slipping through anyway is caught by I5 (`duplicate_payment`, §11.6) |
 | **I4** | **Stock is decremented exactly once** per captured payment, and **never goes below zero** | A unique event id, plus the decrement happening in the capture transaction |
-| **I5** | **Capture always produces an Order**, whatever the Checkout's state | The capture path never checks whether the Checkout is still alive |
+| **I5** | **Every capture is recorded and reaches a human-visible outcome.** The first capture on a Checkout creates its Order, whatever the Checkout's state. A later one flags that Order `duplicate_payment` (§11.6) | The capture path never checks whether the Checkout is still alive; `orders.checkout_id` is unique |
 | **I6** | **We never execute a refund** | No refund API call exists in the codebase; refunds arrive as webhooks |
 | **I7** | **No database connection is held across a Razorpay call** | Code structure: acquire, write, release, *then* call out |
 | **I8** | **A repeated request with the same idempotency key gets the same answer** | An idempotency table written in the same transaction as the effect |
@@ -41,8 +41,8 @@ A Customer's agent builds a **Cart**, turns it into a **Checkout** (prices are s
 |---|---|---|---|
 | **Cart** | Ours (UCP Cart) | A mutable list of Variants, at **live** prices | 7 days (a setting); cleared when its Checkout completes |
 | **Checkout** | Ours (UCP Checkout) | The purchase being set up and paid for. **Owns the PaymentIntents** | 6 h (UCP default `expires_at`) |
-| **PaymentIntent** | Ours, mirroring Razorpay | **One payment attempt** = one Razorpay order (+ link) | Until it reaches a final state; may still become `captured` later (I2) |
-| **Hold** | Ours | Stock set aside for one PaymentIntent while it's being paid | Until the link expires, plus a grace period; or until captured or released |
+| **PaymentIntent** | Ours, mirroring Razorpay | **One payment attempt** = one Razorpay order, paid through its pay page | Until it reaches a final state; may still become `captured` later (I2) |
+| **Hold** | Ours | Stock set aside for one PaymentIntent while it's being paid | Until the attempt's approval window ends, plus 2 min; or until captured or released |
 | **Order** | Ours (UCP Order) | The **permanent record of a paid purchase** | Forever. It's only ever appended to |
 
 ```mermaid
@@ -73,11 +73,11 @@ stateDiagram-v2
     incomplete --> ready_for_complete : all info present
     ready_for_complete --> incomplete : update removes info
     ready_for_complete --> complete_in_progress : complete_checkout (Hold + PaymentIntent created)
-    complete_in_progress --> ready_for_complete : attempt failed / link expired (Hold released)
+    complete_in_progress --> ready_for_complete : attempt failed / window ended (Hold released)
     complete_in_progress --> completed : payment captured (Order created)
     incomplete --> canceled : cancel / expiry
     ready_for_complete --> canceled : cancel / expiry
-    complete_in_progress --> canceled : cancel / expiry (open link cancelled)
+    complete_in_progress --> canceled : cancel / expiry (open attempt cancelled)
     canceled --> completed : LATE capture (I5) - Order flagged late_payment
     completed --> [*]
 ```
@@ -92,12 +92,12 @@ stateDiagram-v2
 ```mermaid
 stateDiagram-v2
     [*] --> created : row written (before the Razorpay call)
-    created --> issued : Razorpay order + link created
+    created --> issued : Razorpay order created, pay page live
     created --> failed : Razorpay call failed
     issued --> captured : payment.captured / order.paid
     issued --> failed : payment.failed
-    issued --> cancelled : retry or cancel_checkout cancelled the link
-    issued --> expired : link expired unpaid
+    issued --> cancelled : superseded by a retry, or cancel_checkout
+    issued --> expired : approval window ended unpaid
     failed --> captured : LATE (UPI retry / late authorisation)
     cancelled --> captured : paid just before the cancel landed
     expired --> captured : late authorisation of an earlier payment
@@ -155,7 +155,7 @@ sequenceDiagram
     S-->>A: completed + order
 ```
 
-### 4.2 Failed attempt, then retry (I3: never two payable links)
+### 4.2 Failed attempt, then retry (I3: never two payable attempts)
 
 ```mermaid
 sequenceDiagram
@@ -166,18 +166,18 @@ sequenceDiagram
     R->>S: payment.failed for PI #1
     S->>S: PI #1 -> failed; Hold released; Checkout -> ready_for_complete + message payment_failed (recoverable)
     A->>S: complete_checkout (NEW idempotency key K2)
-    S->>R: cancel PI #1's link
-    alt cancel succeeds
-        S->>S: PI #1 -> cancelled; new Hold; PI #2 (receipt chk_ab12-2)
-        S->>R: create order + link for PI #2
-        S-->>A: complete_in_progress + new link
-    else cancel refused because #1 was just paid
-        S->>S: wait for / fetch #1's capture -> Checkout completed, Order created
-        S-->>A: completed (no second link)
+    S->>R: fetch PI #1's payments (has it been paid after all?)
+    alt not paid
+        S->>S: PI #1 -> cancelled (superseded: its pay page now refuses); new Hold; PI #2 (receipt chk_ab12-2)
+        S->>R: create order for PI #2
+        S-->>A: complete_in_progress + Action (pay page for PI #2)
+    else #1 was just paid
+        S->>S: apply #1's capture -> Checkout completed, Order created
+        S-->>A: completed (no second attempt)
     end
 ```
 
-**Why cancel first:** if #1's link stayed open, the Customer could pay *both* links and be charged twice. Undoing that would need a human refund (I6). Razorpay only lets a link be cancelled while it's unpaid, and that's exactly the property we need: a cancel that fails *tells us* the link was paid.
+**Why supersede first:** if #1 stayed payable, the Customer could pay *both* and be charged twice, and undoing that needs a human refund (I6). *Updated by #16:* Razorpay **orders** have no cancel API (only Payment Links do), so with our pay page (§11.2) the old attempt is closed **at our edge**: it's marked superseded, its page refuses to open, and its widget times out. A widget left open in a tab can still be paid, and that payment becomes a flagged `duplicate_payment` (§11.6). With the Payment Link fallback, a real cancel is used, and a refused cancel means the link was paid.
 
 ### 4.3 The race for the last unit (why the Hold exists)
 
@@ -279,7 +279,7 @@ The agent calls `complete_checkout` with key K1. The server creates PaymentInten
 | **D2** | **Prices:** live in the Cart, **snapshot** at `create_checkout`, **re-priced** on `update_checkout` (with a message if anything changed), **frozen** from `complete_checkout` | The Customer pays exactly what they were shown once payment starts. UCP forbids changes during `complete_in_progress` | Freezing at Cart time (stale prices for days); never freezing (the price changes mid-payment) |
 | **D3** | **Lifetimes:** Checkout 6 h (UCP default), Cart 7 days (a setting), one incomplete Checkout per Cart (UCP MUST), the Cart cleared on completion | Bounded storage; spec conformance | Carts living forever |
 | **D4** | **Forward only, enforced three ways:** conditional updates, a trigger, an append-only event log | Races, careless queries and replays are each stopped by a different layer | Code-only checks (one careless `UPDATE` breaks them) |
-| **D5** | **Failure → retry:** the Checkout returns to `ready_for_complete`; a retry **cancels the old link first**, then creates a new PaymentIntent | Prevents double charging (I3) | Leaving old links open; reusing one Razorpay order for all attempts (Razorpay's API reference says one order per attempt) |
+| **D5** | **Failure → retry:** the Checkout returns to `ready_for_complete`; a retry **supersedes the old attempt first** (its pay page refuses it; §11.5), then creates a new PaymentIntent | Prevents double charging (I3) | Leaving old links open; reusing one Razorpay order for all attempts (Razorpay's API reference says one order per attempt) |
 | **D6** | **PaymentIntent ranks**, with `captured` beating everything; **automatic capture**; `receipt = {checkout}-{attempt}` | Late authorisation is real; auto-refund of uncaptured payments is avoided; Razorpay's receipt is an idempotency key | Manual capture (the auto-refund risk); one fixed receipt (rejected as a duplicate on retry) |
 | **D7** | **Capture always creates an Order**, flagged `late_payment` / `oversold` when needed | The Customer is never left having paid for nothing, and we never refund automatically | Ignoring late money; auto-refunding it |
 | **D8** | **A Hold at `complete_checkout`**, under a millisecond row lock, with lazy expiry, converted on capture. *This changes #8's "no reservation"* | Stops the everyday last-unit race before anyone pays | No Hold; a Hold at Cart/Checkout creation (bot hoarding); a long DB lock during payment |
@@ -315,6 +315,7 @@ UPDATE payment_intents
 3. **The crash window between the Razorpay call and T2:** the PaymentIntent is left `created` with a known `receipt`. Reconciliation looks it up by its receipt or reference id, and adopts or cancels it. ⏳ **#16 build:** confirm the Razorpay lookup by receipt / `reference_id`.
 4. **Isolation:** Postgres's default READ COMMITTED is enough, because correctness comes from `FOR UPDATE` row locks, conditional updates and unique constraints, not from the isolation level.
 5. **Lock ordering:** when a Checkout has several Variants, lock their rows **in a fixed order (by id)**, so two Checkouts sharing Variants can't deadlock.
+6. **Row-Level Security (#45, ADR-0009):** every payment table that holds owned rows (`checkouts`, `payment_intents`, `holds`, `orders`, `order_events`) ships an RLS policy in the migration that creates it. Agent requests run as their `Owner`. **The webhook receiver and the reconcile script run as `System("razorpay_webhook")` / `System("reconcile")`**, the only paths allowed to touch any Customer's rows, because a payment confirmation belongs to no caller. This is a third, database-enforced isolation layer under the `Owner` type and the isolation tests.
 
 ---
 
@@ -327,7 +328,7 @@ UPDATE payment_intents
 | `carts` ✅ #50 | id (random UUID), owner_platform, owner_customer (null = guest), currency, created_at, updated_at, expires_at | Every lookup is by id **and** owner; an expired row is simply not found |
 | `cart_lines` ✅ #50 | cart_id, position, variant_id, quantity; **no price** (every read joins the live catalog) | PK (cart_id, position); unique (cart_id, variant_id); cascade on Cart delete; no FK to `variants`, so a Variant removed by a re-seed is reported, not silently lost |
 | `checkouts` | id, cart_id, owner, status, line snapshot, totals, expires_at, last_reconciled_at | Partial unique index: **one incomplete Checkout per cart_id**; status trigger |
-| `payment_intents` | id, checkout_id, attempt_no, receipt, razorpay_order_id, link_id, link_url, status, timestamps | Unique (checkout_id, attempt_no); unique receipt; status trigger |
+| `payment_intents` | id, checkout_id, attempt_no, receipt, razorpay_order_id, window_ends_at, status, timestamps | Unique (checkout_id, attempt_no); unique receipt; status trigger |
 | `holds` | id, payment_intent_id, variant_id, qty, expires_at, outcome (null / converted / released) | Index on (variant_id, expires_at) where outcome is null, for the availability query |
 | `orders` | id, checkout_id, owner, line snapshot, totals, payment_intent_id, flags | Unique checkout_id (one Order per Checkout) |
 | `order_events` | order_id, kind (fulfilment / adjustment), payload, created_at | Append-only |
@@ -347,7 +348,8 @@ The **availability query** is `stock - coalesce(sum(qty) filter (where outcome i
 | Webhook never arrives | Reconcile-on-read on the next `get_checkout`; the cron script otherwise | Self-healing | Drop the webhook in a fake; poll; `completed` |
 | Late authorisation after expiry | Order created, flagged `late_payment` (and `oversold` if needed) | The Merchant, via flags | Expire the Checkout, then capture; flagged Order |
 | Two buyers, last unit | The row lock serialises; the second gets `out_of_stock` | The second buyer's agent | Concurrent `complete_checkout`; one Hold |
-| A retry while the old link is just being paid | The cancel fails → the old capture completes the purchase; no second link | Nobody needs to | A fake Razorpay refusing the cancel |
+| A retry while the old attempt is just being paid | The pre-retry fetch finds #1 paid → the purchase completes, with no second attempt | Nobody needs to | A fake Razorpay reporting #1 captured |
+| Customer pays an old tab after a newer attempt was paid | Second capture recorded; no second Order; Order flagged `duplicate_payment` (§11.6) | The Merchant, via flags | Capture two attempts of one Checkout; one Order, flagged |
 | Network drops the `complete_checkout` response | Same idempotency key → same stored response | Nobody needs to | Call twice with one key; one PaymentIntent |
 | Same key, different body | Rejected `-32000` / 409 | The caller | The test asserts the rejection |
 | Idempotency store down | Fail closed (503) | The caller retries | A fault-injected store |
@@ -362,17 +364,220 @@ The **availability query** is `stock - coalesce(sum(qty) filter (where outcome i
 
 ## 10. How agents see it
 
-- **Our Harness (#10, #40):** after `complete_checkout` it shows the link **verbatim**, never through model text (the Human bridge), then polls `get_checkout` about every 3 s for up to 10 minutes. Writes are retried **with the same idempotency key** (D13), which is what makes Harness retries safe.
+- **Our Harness (#10, #40):** after `complete_checkout` it shows the Action's pay-page URL **verbatim**, never through model text (the Human bridge), then polls `get_checkout` about every 3 s for up to 10 minutes. Writes are retried **with the same idempotency key** (D13), which is what makes Harness retries safe.
 - **Any Platform:** UCP tells it to poll `get_checkout` with bounded backoff during `complete_in_progress`, and **not** to re-call Complete to poll. Its polling also drives reconcile-on-read.
 - **Business "no" outcomes** (`out_of_stock`, `payment_failed`, a price change) are **normal results** with `messages[]`, never errors (#9).
 
 ---
 
-## 11. Still open, or decided elsewhere
+## 11. The UPI payment handler (#16)
+
+**Status:** decided in #16 on 10 Oct 2026 (H1–H9, §11.2–11.11). ADR-0008 is the short form. Facts were checked against UCP `v2026-08-25` (`docs/specification/payment/**`, `shopping/checkout/**`, `embedded-protocol.md`) and Razorpay's live docs on 4 Oct 2026.
+
+### 11.1 What a payment handler is, and why UPI needs a new one
+
+UCP itself knows no payment method. A Merchant's profile lists **payment handlers**: plug-ins named under their owner's domain (e.g. `com.google.pay`) that tell an agent *how to pay here*. Every live handler (Google Pay, Shopify card, Shop Pay) follows one shape: **the agent hands over a credential (a token), and `complete_checkout` charges it, synchronously.**
+
+UPI breaks that shape. There's **no token an agent can hold**: a human approves in their own bank app with their PIN. So TillHand's handler is the **first UPI handler for UCP**. It says: *"send no credential; I'll give the human something to approve, and the purchase completes later."* The spec doesn't forbid this:
+- an instrument's `credential` is **optional** (`source/schemas/common/types/payment_instrument.json:7-31`);
+- the spec already has a pattern for "the buyer must act, and the provider confirms later": **Actions**, used for 3-D Secure (`payment/extensions/authentication.md:167-170`);
+- it lets a handler define its own Action types (`payment/guide.md:796-823`).
+
+### 11.2 Decision H1: the payment surface is our own pay page
+
+**What the Customer receives:** a link to a **pay page on the Merchant's own deployment** (`/pay/{payment_intent}`). It opens **Razorpay's Standard Checkout widget** for that attempt's Razorpay order. In live mode the widget shows a **QR code on desktop and the UPI-app chooser on mobile**. In test mode it accepts the test UPI id `success@razorpay`.
+
+**The test-mode facts that decided it** (Razorpay docs, 4 Oct 2026):
+- **In test mode, UPI can only be paid by typing a test UPI id into Razorpay's hosted checkout.** UPI QR and intent work in live mode only ("Test Mode to test UPI payments, and Live Mode for UPI Intent and QR payments", in the S2S test-integration and Standard Checkout docs).
+- **In live mode, NPCI retired "type your UPI id" (UPI Collect) from 28 Feb 2026** for most merchants, so live UPI means QR or intent. The widget switches automatically.
+
+| Option | Test mode | Limits | Keeps #30's design? | Verdict |
+|---|---|---|---|---|
+| **Our pay page + Checkout widget** | ✅ | **No cap documented** | ✅ We create the Razorpay order, so `receipt = {checkout}-{attempt}` and one order per attempt hold exactly | **Chosen** |
+| Razorpay Payment Link | ✅ | ❌ **30 links per test account, counted on creation** | ⚠️ The link makes its own order; there's no `receipt` input (`reference_id` stands in) | **The documented fallback.** It has a real cancel API |
+| Razorpay QR Codes API | ❌ Test QRs can't be scanned | Needs Support approval; a single-use QR lives at most 2 h; no way to attach our reference | ❌ | Rejected |
+| Raw UPI intent (`upi://pay`) via server-to-server | ❌ Live only | Needs Support approval | ⚠️ | Rejected for now |
+
+**Why it holds up in an interview:**
+1. It's the only option that works in test mode **without the 30-link ceiling**.
+2. It keeps the PaymentIntent model from §3.2 intact.
+3. It becomes QR or intent in live mode **with no code change**.
+4. It's one page per Merchant deployment, so it's generic, never skincare-specific.
+
+**What it costs:**
+- **Razorpay orders have no cancel or expiry API.** "Never two payable" (I3) must be enforced by **our page refusing superseded attempts** plus the widget's **timeout**, rather than by a Razorpay cancel (see §11.5).
+- **In live mode the widget's `callback_url` domain must be allowlisted** with Razorpay.
+- **The signature check after payment** is HMAC over `order_id|payment_id`. It's a convenience; the webhook stays the source of truth.
+
+### 11.3 Decision H2: an Action, the 3-D Secure pattern, not escalation
+
+`complete_checkout` returns **`complete_in_progress` plus a handler-specific Action**, roughly `{type: <our UPI-approval Action>, url: /pay/…, expires_at, amount}`. Every response also carries **`continue_url`** pointing at the same page, so an agent that doesn't understand our Action can still hand the link over. The purchase then completes **from Razorpay's webhook** (§4.1), and the agent polls `get_checkout`.
+
+| | **Action (chosen)** | `requires_escalation` + `continue_url` (rejected) |
+|---|---|---|
+| The spec's framing | The defined pattern for "the buyer must act, and the provider confirms out of band" (`authentication.md:167-170`; `three-ds-challenge.md:143-146`) | A **fallback** for "information that cannot be provided via API" (`checkout/index.md:387-391`); its own example says "then retry the completion" |
+| Fit with #30 | `complete_in_progress` and polling, exactly as §3.1 assumed | Would need a second Complete call |
+| Agents that don't know our Action | Still get `continue_url`, which the spec says SHOULD be present in every non-terminal state (`checkout/index.md:949-953`) | — |
+| Cost | We publish a small **Checkout extension** declaring the Action type and its `config` shape, as the spec requires for custom Actions (`guide.md:796-823`; `schema-authoring.md:582-611`) | None |
+
+Two spec rules to respect:
+- **Surface the Action before accepting.** "Because Update Checkout is unavailable after Complete Checkout is accepted, the Business MUST surface any Action that requires input… before accepting" (`checkout/index.md:459-461`). Our Action is in the very response that accepts.
+- **The Action's own completion signal is not authoritative** (`:463-467`). We never trust "the buyer says they paid"; only Razorpay's capture counts.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Agent
+    participant S as TillHand server
+    participant P as Pay page (/pay/{pi})
+    participant R as Razorpay
+    participant H as Customer
+    A->>S: complete_checkout(instrument {handler_id: upi, type: upi}, no credential)
+    S-->>A: complete_in_progress + Action {url: /pay/pi_1, expires_at} + continue_url
+    A-->>H: shows the URL verbatim (Human bridge)
+    H->>P: opens the page
+    P->>P: attempt still current? (refuse if superseded or expired)
+    P->>R: Standard Checkout widget for order_1 (QR / UPI app in live; success@razorpay in test)
+    H->>R: approves in the UPI app
+    R->>S: webhook payment.captured (the source of truth)
+    A->>S: get_checkout (polling)
+    S-->>A: completed + order
+```
+
+### 11.4 Decision H3: how the handler is declared
+
+| Part | Value | Why |
+|---|---|---|
+| **Name** | `app.vercel.tillhand.razorpay_upi` | Handlers are **exempt** from the `{service}.{capability}` naming rule (`overview/index.md:906-911`), but still bound to our domain |
+| **Spec and schema URLs** | On `https://tillhand.vercel.app/…` | Authority binding: the schema's origin MUST match the namespace, or the handler is "treated as not present" (`overview/index.md:849-853`, `:951-955`) |
+| **Instrument** | `type: "upi"`, **no credential** | The agent sends only `{id, handler_id, type}`. There's nothing to tokenise |
+| **Business config** | Currency `INR`, minimum and maximum amount, `requires_human_approval: true`, the Action type returned, and the approval window | Agents know before starting that a human must approve |
+| **The handler spec document** | Written from UCP's template (`payment/template.md`): participants, prerequisites, declaration, instrument acquisition, processing, and **a mapping from failures to UCP error codes** | All MUSTs (`guide.md:50-81`, `:851-854`). It's the published contribution: the first UPI handler anywhere |
+
+An illustrative entry in the Merchant's `/.well-known/ucp` (the exact fields follow `source/schemas/payment_handler.json` at build time):
+
+```json
+"payment_handlers": {
+  "app.vercel.tillhand.razorpay_upi": [{
+    "id": "upi",
+    "version": "2026-10-10",
+    "spec": "https://tillhand.vercel.app/specs/payment/razorpay_upi",
+    "schema": "https://tillhand.vercel.app/schemas/payment/razorpay_upi.json",
+    "config": { "currency": "INR", "requires_human_approval": true, "approval_window_seconds": 900 }
+  }]
+}
+```
+
+### 11.5 What H1 changes in earlier sections
+
+- **I3 ("never two payable links") now holds through our page, not a Razorpay cancel.**
+  - A retry marks the previous attempt **superseded**, and the pay page refuses it.
+  - The widget's timeout closes an already-open checkout when its attempt expires.
+  - §4.2's "cancel PI #1's link" therefore reads "supersede PI #1". Razorpay orders can't be cancelled, and that's documented.
+- **The residual risk:** a Customer who kept attempt #1's widget open could still pay it after #2 exists. A second capture on a completed Checkout is handled by §11.6.
+- **Reconciliation lookups work:** `GET /v1/orders?receipt=` finds an attempt's order (Razorpay Orders "fetch all"), and `GET /v1/orders/{id}/payments` lists its payments. That closes the crash window in §7.3.
+- **The 30-link cap no longer constrains demos.** It only applies if we fall back to Payment Links.
+
+### 11.6 Decision H4: a second capture becomes `duplicate_payment`, never a second Order
+
+**A worked example.** Priya leaves pay page #1 open in a tab, and her agent retries, giving her pay page #2.
+
+```
+10:05  pays in tab #2  → captured → Order created
+10:06  notices tab #1, still open, pays it too  → a SECOND capture on the same Checkout
+```
+
+Razorpay orders can't be cancelled, and tab #1's widget was already open, so our page's refusal (§11.5) never got the chance to act. The Merchant now holds **two payments for one purchase.**
+
+| Option | Outcome | Verdict |
+|---|---|---|
+| Create a second Order | Two shipments for one intended purchase | ❌ She paid twice by accident; she didn't order twice |
+| Ignore the second capture | Her money disappears from our records | ❌ It breaks "money that arrives is never lost" |
+| **Record it, and flag the Order `duplicate_payment`** | The second PaymentIntent becomes `captured` (I2 still holds); **no second Order** (`orders.checkout_id` is unique); the existing Order gets the flag plus the extra payment's id, and appears on the Merchant's flagged list (#53) | ✅ **Chosen.** A human refunds the extra payment in the dashboard; we never auto-refund (I6) |
+
+**Prevention keeps it rare:**
+- the widget's timeout equals the attempt's window;
+- the page re-checks on load that it's still the current attempt;
+- an attempt is superseded only once its window has ended or it has failed.
+
+**The interview line:** *with UPI we can't make double payment impossible, because the provider has no cancel; so we make it rare, detected and visible.* `duplicate_payment` joins `late_payment` and `oversold` as the third flag, all under one principle: **money that arrives is always recorded and always reaches a human-visible outcome.**
+
+### 11.7 Decision H5: how long a pay page lives
+
+Three clocks run at once, shown here for a Checkout created at 10:00:
+
+| Clock | Length (each a setting) | Example |
+|---|---|---|
+| **Checkout** | 6 h (UCP default) | Expires 16:00 |
+| **Approval window** (the pay page and the widget timeout) | **15 min, or the Checkout's remaining time if that's shorter** | Completed at 10:30 → payable until 10:45 |
+| **Hold** | The window + 2 min grace | Released at 10:47 if unpaid |
+
+**Near the end of a Checkout, the window shrinks to the time left** (the owner's decision):
+- `complete_checkout` at **15:55** → a **5-minute** pay page, ending exactly with the Checkout.
+- At **15:59** (under **2 minutes** left) → refused with the normal result `checkout_expiring` (`recoverable`). The agent makes a fresh Checkout from the same Cart.
+
+**Why a shrinking window rather than a refusal at 15 min:** the Customer isn't sent away while time remains, and the window never outlives its Checkout, so a short window can't, by itself, produce `late_payment` Orders.
+
+**The caveat:** the Payment Link fallback (§11.2) has Razorpay's **15-minute minimum** expiry, so short windows apply to our pay page only.
+
+### 11.8 Decision H6: which UCP error each failure becomes
+
+UCP requires a handler to map its failures to standard errors (`payment/guide.md:851-854`). Each is a **normal result** with a `messages[]` entry (#9), and its severity tells the agent what to do next.
+
+| What went wrong | Example | Code | Severity → what the agent does |
+|---|---|---|---|
+| The UPI payment failed | Wrong PIN; the bank declined | `payment_failed` | `recoverable` → offer a retry |
+| The approval window ran out | Never opened the page | `payment_failed`, detail `approval_expired` | `recoverable` → offer a retry |
+| Razorpay slow or down when the order is created | A timeout at `razorpay.create_order` | `upstream_timeout` (custom, per #9) | `recoverable` → try again shortly |
+| Out of stock at completion | Someone else holds the last unit | `out_of_stock` | `requires_buyer_input` → choose something else |
+| Amount outside the handler's limits | Above the configured maximum | `payment_failed`, detail `amount_out_of_range` | `requires_buyer_input` → change the Cart |
+| Under 2 min left on the Checkout | Completed at 15:59 | `checkout_expiring` (custom) | `recoverable` → start a new Checkout |
+| The agent sent a credential, or the wrong instrument type | A card token sent to the UPI handler | `invalid_instrument` (custom) | `unrecoverable` for that request → fix the call |
+
+This table goes into the published handler spec, and every row gets a test.
+
+### 11.9 Decision H7: no mode-specific code; test vs live is a key and a page
+
+TillHand runs in **test mode only**: map #1 puts any real-money mode out of scope. The design is still **live-ready**. Nothing in our code branches on the mode; the widget adapts by itself, and the mode is simply which keys are configured.
+
+| | Test mode (what we demo) | Live mode (a real Merchant) |
+|---|---|---|
+| What the pay page shows | A box to type the test UPI id `success@razorpay` | A **QR code** (desktop), or **"pick your UPI app"** (mobile); UPI Collect was retired by NPCI from 28 Feb 2026 |
+| API keys | `rzp_test_…` | `rzp_live_…` |
+| Webhooks | Configured separately for test (the setup OTP is `754081`) | Configured separately for live |
+| The widget's `callback_url` domain | No allowlist | **Must be allowlisted** with Razorpay |
+| Payment Link fallback | 30 per account, ever | No cap |
+
+**The demo says so plainly:** *"in test mode you type a test UPI id; live, this page shows a QR code."* Evals never touch real Razorpay; they use a fake in `integrations/razorpay/` (#17).
+
+### 11.10 Decision H8: room for agents that pay without a human, built later
+
+**What's coming:** **UPI Reserve Pay**. Priya approves **once** to block up to **₹10,000 for up to 90 days**, and an agent can then make several debits against that block without asking her each time. It's in Razorpay's docs, it needs Razorpay to enable it, and its test mode is unverified. It powers Razorpay and NPCI's **"Agentic Payments on Claude"** pilot (Zomato, Swiggy, Zepto, since Feb 2026), which is a closed user group.
+
+**What we do now:** we leave room, and build nothing.
+- The handler's config lists its **instrument types**. Today that's only `upi`: a human approves, with no credential.
+- Reserve Pay would be a second type, `upi_reserve_pay`, **with** a credential (a reference to the block), under the **same** handler.
+- The Checkout state machine, the webhooks, the Order and every invariant stay exactly as they are. Only how one attempt gets authorised changes.
+- **AP2 mandate verification is #20.** Reserve Pay is tracked in #58, waiting on Razorpay enabling it.
+
+**The interview line:** *human-absent payment is a new instrument type, not a redesign.*
+
+### 11.11 Decision H9: publish the handler where agents look
+
+A handler is only real once its **spec and schema are served at the URLs the profile names**, on `tillhand.vercel.app`, or Platforms silently ignore it (§11.4). The same goes for our two Extensions, whose schemas aren't hosted yet either. Everything is **authored in the repo under `web/site/` and deployed by Vercel**, with a test that every URL our profile names has a matching file. That's #57. It's blocked only by claiming the `tillhand` project name on Vercel (an owner step), not by #36's product design.
+
+What gets published:
+- the **handler spec**, from UCP's template, including the error table in §11.8;
+- the **handler JSON Schema**;
+- the **Checkout extension** that declares our approval Action type;
+- the **Suggestions** and **refund-request** Extension schemas.
+
+---
+
+## 12. Still open, or decided elsewhere
 
 | Topic | Where |
 |---|---|
-| The UCP status while waiting for the UPI approval: `complete_in_progress` vs `requires_escalation` + `continue_url`; link vs QR; the handler's config schema in the profile | ⏳ **#16** |
 | How the eval suite drives a payment to completion within the 30-link test-mode cap; whether `failure@razorpay` still works | ⏳ **#17**, **#14** |
 | Sending UCP **Order webhooks to Platforms** (MUST, signed with RFC 9421) | Its own build ticket, blocked by #22 |
 | Signing our responses and verifying Platform signatures | #22 |
@@ -380,7 +585,7 @@ The **availability query** is `stock - coalesce(sum(qty) filter (where outcome i
 
 ---
 
-## 12. Interview questions, with answers
+## 13. Interview questions, with answers
 
 **Q1. Walk me through a purchase end to end.**
 Cart → `create_checkout` (prices snapshotted) → `complete_checkout`: short transaction (lock Variant rows, check stock minus Holds, insert Hold and PaymentIntent, Checkout `complete_in_progress`, store the idempotency key) → commit → create the Razorpay order and link → return the link. The human pays in their UPI app → `payment.captured` webhook → one transaction: insert the event (dedupe), PaymentIntent captured, Checkout completed, Hold → stock decrement, Order created → 200.
@@ -389,7 +594,7 @@ Cart → `create_checkout` (prices snapshotted) → `complete_checkout`: short t
 UPI has no token an agent can hand over: the human approves in their own bank app with their PIN. So `complete_checkout` can only *start* a payment. Completion arrives later, by webhook.
 
 **Q3. How do you prevent double charging?**
-Three ways. (1) **Never two payable links:** a retry cancels the old link first, and if the cancel fails, the old link was paid, so the purchase is complete. (2) **Idempotency keys:** a retried `complete_checkout` with the same key returns the same link. (3) **Razorpay's `receipt`** is unique per attempt, so the same attempt can't create two Razorpay orders.
+Three ways. (1) **Never two payable attempts:** a retry supersedes the old attempt (its pay page refuses it, and its widget times out); and a payment that slips through anyway is flagged `duplicate_payment`, never a second Order. (2) **Idempotency keys:** a retried `complete_checkout` with the same key returns the same link. (3) **Razorpay's `receipt`** is unique per attempt, so the same attempt can't create two Razorpay orders.
 
 **Q4. Webhooks arrive twice. What stops you processing a payment twice?**
 The event id (`x-razorpay-event-id`) is the primary key of an append-only `webhook_events` table, inserted in the same transaction as the effects. A duplicate violates the key, the transaction does nothing, and we still answer 200.
@@ -465,9 +670,47 @@ The model (forward-only states, a unique event log, holds, one transition functi
 **Q26. What's the single most important design idea here?**
 **All the paths into the state machine (webhooks, polling, the reconcile script) go through one transition function, guarded by the database.** Then duplicates, delays, reordering and missed messages all become the same boring case: "apply this fact if it moves us forward, otherwise do nothing."
 
+### Payment handler (#16)
+
+**Q27. What's a UCP payment handler, and why did you have to write a new one?**
+A handler is a plug-in a Merchant's profile lists to tell agents *how to pay here*. Every live handler (Google Pay, Shopify card, Shop Pay) assumes the agent hands over a token that the Merchant charges synchronously. UPI has no token, because a human approves in their bank app. So we defined the first UPI handler: no credential from the agent, a human approval step, and asynchronous completion.
+
+**Q28. How does a handler say "a human must approve"? Isn't `requires_escalation` for that?**
+UCP has a better fit: **Actions**, the same pattern 3-D Secure uses. `complete_checkout` returns `complete_in_progress` with an Action (our approval URL), and the Merchant completes the purchase from the provider's callback. `requires_escalation` is framed as a fallback for "information the API can't collect", and its example re-calls Complete. We still include `continue_url` in every response, so agents that don't know our Action can hand the link over anyway.
+
+**Q29. Why your own pay page instead of Razorpay Payment Links?**
+In test mode, UPI can only be paid on Razorpay's hosted checkout by typing a test UPI id; QR and intent are live-only. That leaves two surfaces. Payment Links cap at **30 per test account**, and they create their own order (no `receipt`). Our page with Razorpay's checkout widget has no cap, keeps one-order-per-attempt with our `receipt`, and in live mode shows a QR on desktop and the UPI app on mobile with no code change. Links remain the documented fallback.
+
+**Q30. Razorpay orders can't be cancelled. How do you still guarantee "never two payable"?**
+- **At our edge:** a retry marks the old attempt *superseded*, our pay page refuses superseded or expired attempts, and the widget's timeout closes an already-open checkout.
+- **For the residual case,** a Customer paying an old tab they kept open, that's the second-capture case (§11.6). It's detected, flagged and resolved by a human. It's never silently accepted, and never auto-refunded.
+
+**Q31. Why is the credential empty? Isn't that insecure?**
+There's nothing to tokenise. The security comes from the **human approving in their own bank app with their own PIN**, which is stronger consent than any token an agent could carry. The agent can start a payment, but it can never complete one.
+
+**Q32. What happens when UPI goes agent-native: Reserve Pay, mandates, AP2?**
+The handler is versioned on its own, can add instrument and credential types, and can add Actions. A Reserve Pay instrument (a block of up to ₹10,000 the agent can debit within a window) would be a **new instrument type with a credential** under the same handler, and AP2 mandate verification is #20. Neither needs a redesign of the human-approval path, which stays as the default.
+
+**Q33. A Customer pays twice for the same purchase. What happens?**
+The first capture creates the Order. The second is recorded (its PaymentIntent becomes `captured`, because money that arrives is never lost), but it creates **no second Order**: `orders.checkout_id` is unique. Instead it flags the Order `duplicate_payment` for the Merchant to refund by hand. Prevention keeps it rare: the widget times out with its attempt, and the page refuses superseded attempts. But since Razorpay orders can't be cancelled, we make it **detectable**, not impossible.
+
+**Q34. Why does the pay page's window shrink near the end of a Checkout?**
+So a payment window never outlives its Checkout. At 15:55 on a Checkout expiring at 16:00, the page lives 5 minutes, and under 2 minutes left the call is refused with `checkout_expiring`. A Hold lasts the window plus 2 minutes of grace, so stock is never held for a page nobody can pay.
+
+**Q35. How does an agent know what to do when a payment fails?**
+Every failure is a normal result with a standard UCP code and a **severity**:
+- `recoverable` means retry (`payment_failed`, `upstream_timeout`, `checkout_expiring`);
+- `requires_buyer_input` means ask the human (`out_of_stock`, an amount out of range);
+- `unrecoverable` means fix the request (`invalid_instrument`).
+
+The mapping is a MUST in UCP's handler guide, and it's published in our handler spec.
+
+**Q36. Did you ever run this with real money? How do you know it works live?**
+No: test mode only, by design (real money is out of scope). Nothing in our code branches on the mode. Razorpay's widget shows a test UPI-id box in test mode and a QR code or UPI-app chooser live, and the mode is only which keys are configured. What changes for a real Merchant is configuration: live keys, live webhooks, and allowlisting the pay page's domain. The state machine, webhooks and invariants are the same, and are covered by a fake Razorpay that can capture, fail, duplicate and reorder on command.
+
 ---
 
-## 13. References
+## 14. References
 
 - **Tickets:** #30 (this design), #4 (Razorpay research), #8 (the catalog model; "no reservation" changed by D8), #9 (UCP contracts), #10 (the Harness and Human bridge), #11 (ownership and idempotency context), #16, #17, #22, #24, #43.
 - **ADRs:** 0007 (this), 0001 (the Harness as an MCP client).
