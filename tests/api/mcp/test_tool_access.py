@@ -11,7 +11,7 @@ import pytest
 
 from tests.support.app import HOST, app
 from tests.support.mcp import MODES, serve
-from tillhand.api.mcp import TOOL_ACCESS, OwnedTool, UcpTool, build_mcp_server
+from tillhand.api.mcp import TOOL_ACCESS, OwnedTool, PublicDoorRules, UcpTool, build_mcp_server
 from tillhand.models.domain import Owner
 from tillhand.models.ucp import ErrorResponse, SearchCatalogArguments
 from tillhand.services.profiles import ProfileResolver
@@ -31,7 +31,7 @@ def _build(tools: list[Any]) -> None:
     def no_profiles() -> ProfileResolver:
         raise AssertionError("never called")
 
-    build_mcp_server(tools, profiles=no_profiles, tool_seconds=1)
+    build_mcp_server(tools, profiles=no_profiles, tool_seconds=1, door=PublicDoorRules())
 
 
 @pytest.mark.parametrize("mode", MODES)

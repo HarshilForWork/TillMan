@@ -11,6 +11,7 @@ from .catalog import (
     category_key,
     category_prefixes,
 )
+from .merchant import MerchantCaller, MerchantDoorHeaders
 from .owner import Owner
 from .platforms import PlatformsFile, PreApprovedPlatform
 
@@ -18,6 +19,8 @@ __all__ = [
     "CATEGORY_SEPARATOR",
     "Bundle",
     "Catalog",
+    "MerchantCaller",
+    "MerchantDoorHeaders",
     "Option",
     "Owner",
     "PlatformsFile",

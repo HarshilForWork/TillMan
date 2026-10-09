@@ -21,15 +21,37 @@ HARNESS = {"ucp-agent": {"profile": "https://tillhand.vercel.app/profiles/harnes
 """`meta` as our own Harness sends it: the production app pre-approves it in `data/platforms.json`."""
 
 
+MERCHANT_PATH = "/merchant/mcp"
+"""The Merchant door: every request needs `TillHand-Api-Key`."""
+
+
 @asynccontextmanager
-async def serve(app: FastAPI, *, host: str, mode: str) -> AsyncIterator[Client]:
-    """Run the app's lifespan and connect a client: `mode` is "legacy" (the initialize handshake) or a
-    modern protocol version such as "2026-07-28"."""
+async def running(app: FastAPI) -> AsyncIterator[None]:
+    """Run the app's lifespan, so clients can `connect` to it (several at once, each with its own headers)."""
+    async with app.router.lifespan_context(app):
+        yield
+
+
+@asynccontextmanager
+async def connect(
+    app: FastAPI, *, host: str, mode: str, path: str = "/mcp", headers: dict[str, str] | None = None
+) -> AsyncIterator[Client]:
+    """A client of a running app, on `path`, sending `headers` with every request: `mode` is "legacy" (the
+    initialize handshake) or a modern protocol version such as "2026-07-28"."""
+    transport = httpx2.ASGITransport(app=app)
     async with (
-        app.router.lifespan_context(app),
-        httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url=f"http://{host}") as http,
-        Client(streamable_http_client(f"http://{host}/mcp", http_client=http), mode=mode) as client,
+        httpx2.AsyncClient(transport=transport, base_url=f"http://{host}", headers=headers or {}) as http,
+        Client(streamable_http_client(f"http://{host}{path}", http_client=http), mode=mode) as client,
     ):
+        yield client
+
+
+@asynccontextmanager
+async def serve(
+    app: FastAPI, *, host: str, mode: str, path: str = "/mcp", headers: dict[str, str] | None = None
+) -> AsyncIterator[Client]:
+    """Run the app's lifespan and connect one client."""
+    async with running(app), connect(app, host=host, mode=mode, path=path, headers=headers) as client:
         yield client
 
 

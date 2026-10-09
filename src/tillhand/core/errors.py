@@ -59,6 +59,17 @@ class ServiceUnavailable(Exception):
         return ProtocolErrorData(code="service_unavailable", retry_after=RETRY_AFTER_SECONDS)
 
 
+class UnknownProfile(ValueError):
+    """A Merchant API key was asked for a profile that isn't pre-registered in the `platforms` table."""
+
+
+class Unauthorized(Exception):
+    """The Merchant door's key is missing, wrong or revoked: the same answer for all three, so trying keys
+    reveals nothing (#11 decision 3). HTTP 401 with JSON-RPC `-32000` "Unauthorized", as UCP's example."""
+
+    message = "Unauthorized"
+
+
 class ProfileError(Exception):
     """The Platform's profile can't be used: a protocol failure, not a business "no".
 

@@ -85,12 +85,20 @@ A third-party agent or app, such as Google's or ChatGPT's, that shops with a Mer
 _Avoid_: Client, consumer, bot
 
 **Profile**:
-The JSON document a Platform publishes at a URL to say who it is and what it supports, as UCP defines it. The Platform names that URL on every request, and the server validates the profile before any tool runs, or refuses the call with the reason it can't be used. A **pre-approved** Platform's profile is registered in advance (`data/platforms.json`) and never fetched.
+The JSON document a Platform publishes at a URL to say who it is and what it supports, as UCP defines it. The Platform names that URL on every request, and the server validates the profile before any tool runs, or refuses the call with the reason it can't be used. A **pre-approved** Platform's profile is registered in advance, in the `platforms` table (seeded from `data/platforms.json`), and never fetched. A **key-bound** profile is a Merchant assistant's: it works only on the Merchant door, with one of its Merchant API keys, and is refused on the public door.
 _Avoid_: Manifest, agent card
 
 **Merchant assistant**:
 The Merchant's own chatbot, on its site or on WhatsApp, which uses the Merchant door with a Merchant API key instead of a profile URL. Claim A is about this.
 _Avoid_: Chatbot (alone), widget, our agent
+
+**Public door**:
+The MCP endpoint `/mcp`, where any Platform calls the tools, naming itself with its profile URL. That URL is a claim, not proof, so every caller here is a guest.
+_Avoid_: Public API, open endpoint
+
+**Merchant door**:
+The MCP endpoint `/merchant/mcp`, where the Merchant assistant calls the same tools, proving itself with a Merchant API key and optionally vouching for a Customer with `TillHand-Customer`. A missing, wrong or revoked key gets the same 401. A Merchant assistant's profile works only here.
+_Avoid_: Private API, admin endpoint, back door
 
 **Merchant API key**:
 The secret a Merchant assistant sends to use the Merchant door, in its own header, never in `Authorization`. Each key maps to exactly one pre-registered profile. Only its hash is stored, and it can be revoked instantly.

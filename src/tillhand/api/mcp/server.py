@@ -16,8 +16,9 @@ The HTTP status stays 200, as the SDK sends it for every JSON-RPC error; UCP's R
 (400/424/422) are not mapped onto `/mcp` (decided in #37).
 
 Two kinds of tool (#42). A `UcpTool` is public: it reads only what anyone may see. An `OwnedTool` reads
-data that belongs to someone, so it is also handed the caller's `Owner`, which `identify` builds from the
-resolved profile. Every tool is labelled one or the other in `access.TOOL_ACCESS`, and the server refuses
+data that belongs to someone, so it is also handed the caller's `Owner`, which the door (#41,
+`doors.py`) builds: the Platform on the public door, the key's profile plus the Customer on the Merchant
+door. Every tool is labelled one or the other in `access.TOOL_ACCESS`, and the server refuses
 to be built with a tool that isn't, or whose label contradicts how it is built.
 """
 
@@ -33,6 +34,7 @@ from mcp.shared.exceptions import MCPError
 from pydantic import BaseModel, ValidationError
 
 from tillhand.api.mcp.access import TOOL_ACCESS, Access
+from tillhand.api.mcp.doors import DoorRules
 from tillhand.core.deadlines import StepTimeout, deadline
 from tillhand.core.errors import (
     UCP_DISCOVERY_FAILED,
@@ -50,14 +52,6 @@ from tillhand.services.profiles import ProfileResolver
 logger = logging.getLogger(__name__)
 
 ArgumentsT = TypeVar("ArgumentsT", bound=BaseModel)
-
-Identify: TypeAlias = Callable[[RequestMeta], Owner]
-"""Who is calling an owner-scoped tool, from the call's `meta` (its profile is resolved by then)."""
-
-
-def platform_owner(meta: RequestMeta) -> Owner:
-    """The public door's caller: the Platform alone. The Merchant door adds the Customer (#41)."""
-    return Owner(platform=meta.ucp_agent.profile)
 
 
 @dataclass(frozen=True)
@@ -121,9 +115,10 @@ def build_mcp_server(
     *,
     profiles: Callable[[], ProfileResolver],
     tool_seconds: float,
-    identify: Identify = platform_owner,
+    door: DoorRules,
     access: Mapping[str, Access] = TOOL_ACCESS,
 ) -> Server:
+    """One MCP server per door: the same tools, with `door` deciding who the caller is."""
     check_access(tools, access)
     by_name = {tool.name: tool for tool in tools}
 
@@ -138,17 +133,23 @@ def build_mcp_server(
         tool = by_name.get(params.name)
         if tool is None:
             raise MCPError(code=types.INVALID_PARAMS, message=f"Unknown tool: {params.name}")
-        arguments = params.arguments or {}
         try:
+            arguments = door.arguments(params.arguments or {}, ctx.request)
             meta = _meta(arguments)
+            await door.admit(meta.ucp_agent.profile, profiles())
             await profiles().resolve(meta.ucp_agent.profile)
-            return await _call(tool, arguments, tool_seconds, lambda: identify(meta))
+            return await _call(tool, arguments, tool_seconds, lambda: door.owner(meta, ctx.request))
         except ProfileError as exc:
             raise MCPError(
                 code=UCP_DISCOVERY_FAILED, message="UCP discovery failed", data=ucp_dump(exc.data())
             ) from exc
         except MCPError:
             raise
+        except (ServiceUnavailable, StepTimeout) as exc:
+            # Only the door's own checks get here (a tool's are handled in `_call`). Fail closed, saying why.
+            unavailable = ServiceUnavailable(exc.step)
+            data = unavailable.data().model_copy(update={"content": f"{exc.step} is unavailable or too slow"})
+            raise MCPError(code=UCP_PROTOCOL_ERROR, message=unavailable.message, data=ucp_dump(data)) from exc
         except Exception as exc:
             # The SDK's legacy path would send the exception's own text to the client, and that text
             # can carry anything (a connection string, a query). It stays in our log.

@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from scripts.seed_platforms import DEFAULT_REGISTRY
 from tests.support.ucp_spec import schema_errors
-from tillhand.core.config import Settings
 from tillhand.core.constants import SUGGESTIONS, TILLHAND_SITE
-from tillhand.services.profiles import load_pre_approved
+from tillhand.services.profiles import load_pre_approved, registry_entries
 from tillhand.utils.namespace import schema_authority_matches
 
 pytestmark = pytest.mark.anyio
@@ -22,8 +22,14 @@ def entries() -> list[dict[str, object]]:
     return json.loads(REGISTRY.read_text(encoding="utf-8"))["platforms"]
 
 
-def test_the_app_reads_the_shipped_registry_by_default() -> None:
-    assert Settings.model_fields["platforms_file"].default == Path("data/platforms.json")
+def test_the_seed_script_loads_the_shipped_registry_by_default() -> None:
+    assert DEFAULT_REGISTRY == Path("data/platforms.json")
+
+
+def test_each_registry_entry_keeps_its_profile_document_as_written() -> None:
+    loaded = registry_entries(REGISTRY.read_bytes())
+
+    assert [json.loads(document) for _, document in loaded] == [e["profile"] for e in entries()]
 
 
 async def test_the_shipped_registry_pre_approves_the_harness() -> None:

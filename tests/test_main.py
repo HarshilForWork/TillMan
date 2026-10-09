@@ -5,16 +5,26 @@ uv run python scripts/seed_catalog.py data/seeds/skincare.json
 TILLHAND_NEON_TESTS=1 uv run pytest -m neon
 """
 
+import json
 import os
 import uuid
 from typing import Any
 
+import httpx2
 import pytest
 from mcp import Client
+from mcp.shared.exceptions import MCPError
 
-from tests.support.mcp import HARNESS, MODES, call, serve
+from tests.support.mcp import HARNESS, MERCHANT_PATH, MODES, call, connect, running, serve
+from tests.support.merchant import merchant_headers
+from tests.support.profiles import PLATFORM_PROFILE
 from tests.support.ucp_spec import schema_errors
+from tillhand.core.config import get_settings
+from tillhand.integrations.neon.merchant import NeonMerchantStore, NeonPlatformStore
+from tillhand.integrations.neon.pool import create_pool
 from tillhand.main import production_app
+from tillhand.models.domain import PreApprovedPlatform
+from tillhand.services.merchant_door import issue_key
 
 live = pytest.mark.skipif(os.environ.get("TILLHAND_NEON_TESTS") != "1", reason="set TILLHAND_NEON_TESTS=1")
 pytestmark = [pytest.mark.anyio, pytest.mark.neon, live]
@@ -72,3 +82,48 @@ async def call_cart(client: Client, tool: str, arguments: dict[str, Any], *, key
     result = await client.call_tool(tool, {"meta": meta, **arguments})
     assert not result.is_error and isinstance(result.structured_content, dict)
     return result.structured_content
+
+
+@pytest.mark.parametrize("mode", MODES)
+async def test_the_production_app_serves_the_merchant_door_from_neon(mode: str) -> None:
+    pool = await create_pool(get_settings(), max_size=2)
+    url = f"https://tests.example/{uuid.uuid4()}/assistant.json"
+    entry = PreApprovedPlatform.model_validate(
+        {"profile_url": url, "note": "test", "profile": PLATFORM_PROFILE}
+    )
+    customer = f"test-{uuid.uuid4()}"
+    try:
+        await NeonPlatformStore(pool).upsert([(entry, json.dumps(PLATFORM_PROFILE))])
+        key, _ = await issue_key(NeonMerchantStore(pool), label="live test", profile_url=url)
+        line = {"item": {"id": "var_niacinamide_serum_30"}, "quantity": 1}
+        served = production_app()  # reads the registry, now holding the test assistant, at startup
+        async with running(served):
+            async with connect(
+                served,
+                host="localhost:8000",
+                mode=mode,
+                path=MERCHANT_PATH,
+                headers=merchant_headers(key, customer),
+            ) as client:
+                created = await client.call_tool("create_cart", {"cart": {"line_items": [line]}})
+                assert isinstance(created.structured_content, dict)
+                got = await client.call_tool("get_cart", {"id": created.structured_content["id"]})
+            async with connect(served, host="localhost:8000", mode=mode) as public:
+                with pytest.raises(MCPError) as refused:
+                    await public.call_tool("get_cart", {"meta": {"ucp-agent": {"profile": url}}, "id": "x"})
+            async with httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=served), base_url="http://localhost:8000"
+            ) as http:
+                wrong = await http.post(MERCHANT_PATH, json={}, headers=merchant_headers("thk_wrong"))
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("delete from carts where owner_platform = $1", url)
+            await conn.execute("delete from merchant_api_keys where profile_url = $1", url)
+            await conn.execute("delete from platforms where profile_url = $1", url)
+            await conn.execute("delete from customers where merchant_customer_id = $1", customer)
+        await pool.close()
+
+    assert isinstance(got.structured_content, dict)
+    assert got.structured_content["id"] == created.structured_content["id"]
+    assert refused.value.error.data == {"code": "merchant_key_required"}
+    assert wrong.status_code == 401

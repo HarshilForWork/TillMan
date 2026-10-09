@@ -1,35 +1,38 @@
 """The cross-owner isolation fixture (#42, #11 decision 9): another owner must learn nothing about your data.
 
-Owner A creates something (a Cart, say). Then each stranger calls every owner-scoped tool twice: once
-with A's id, once with an id that never existed. The two answers must be **byte-identical**, and must be
-the tool's rule (#11 decision 7):
+An owner creates something (a Cart, say). Then every other caller uses every owner-scoped tool twice:
+once with the owner's id, once with an id that never existed. The two answers must be **byte-identical**,
+and must be the tool's rule (#11 decision 7):
 - `not_found`: a normal result whose message code is `not_found` (Carts, and Orders with a Customer token);
 - `identity_required`: the JSON-RPC `-32000` error asking for a Customer token (Orders without one).
-Afterwards A reads the thing again and must find it unchanged, so a stranger's update or cancel did nothing.
+Afterwards the owner reads the thing again and must find it unchanged, so a stranger's update or cancel did
+nothing.
 
-The strangers cover both halves of an Owner: Customer B and a guest on A's own Platform, then a guest
-and Customer A on another Platform (the same Customer through another Platform is another Owner). A
-Customer is named by the test-only `meta["test-customer"]`, read by `identify_with_test_customer`; the
-Merchant door (#41) is the first real door that identifies one.
+The callers are real ones, through both doors (#41): on the Merchant door, Customers A and B and a guest
+through the demo assistant's key, and Customer A through another assistant's key (the same Customer through
+another profile is another Owner); on the public door, two Platforms. Two of them take a turn as the owner:
+Customer A through the demo assistant, and a Platform on the public door.
 
-**Adding a tool** (the cart, checkout, order and refund tickets each do this): describe how Owner A creates
-the resource and how each of its tools is called, as a `Resource` in `RESOURCES` (or in that ticket's
-test module). `test_every_owner_scoped_tool_is_in_the_isolation_fixture` fails until every tool labelled
-`owner_scoped` is probed here.
+**Adding a tool** (the cart, checkout, order and refund tickets each do this): describe how an owner
+creates the resource and how each of its tools is called, as a `Resource` in `RESOURCES`.
+`test_every_owner_scoped_tool_is_in_the_isolation_fixture` fails until every tool labelled `owner_scoped`
+is probed here.
 """
 
 import json
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from mcp import Client
 from mcp.shared.exceptions import MCPError
 
+from tests.support.mcp import MERCHANT_PATH
+from tests.support.merchant import KEY_A, KEY_OTHER, merchant_headers
 from tests.support.profiles import PLATFORM_PROFILE, PLATFORM_URL
-from tillhand.models.domain import Owner
-from tillhand.models.ucp import PlatformProfile, RequestMeta
+from tillhand.models.ucp import PlatformProfile
 
 OTHER_PLATFORM_URL = "https://other-platform.example/profiles/agent.json"
 
@@ -37,31 +40,40 @@ BOTH_PLATFORMS = {
     PLATFORM_URL: PlatformProfile.model_validate(PLATFORM_PROFILE),
     OTHER_PLATFORM_URL: PlatformProfile.model_validate(PLATFORM_PROFILE),
 }
-"""Pre-approve both Platforms, so neither is fetched."""
-
-TEST_CUSTOMER = "test-customer"
+"""Pre-approve both public-door Platforms, so neither is fetched."""
 
 
-def meta(platform: str, customer: str | None = None) -> dict[str, Any]:
-    named = {"ucp-agent": {"profile": platform}}
-    return named if customer is None else {**named, TEST_CUSTOMER: customer}
+@dataclass(frozen=True)
+class Caller:
+    """Someone calling the tools: which door, the HTTP headers, and the `meta` sent with each call."""
+
+    path: str
+    headers: dict[str, str] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
+    """On the Merchant door the key's profile fills `meta.ucp-agent`, so nothing needs sending."""
 
 
-def identify_with_test_customer(request_meta: RequestMeta) -> Owner:
-    """The test door: the Platform, plus the Customer named in `meta["test-customer"]`, if any."""
-    customer = (request_meta.model_extra or {}).get(TEST_CUSTOMER)
-    platform = request_meta.ucp_agent.profile
-    return Owner(platform=platform, customer=customer if isinstance(customer, str) else None)
+def _platform(url: str) -> Caller:
+    return Caller("/mcp", meta={"ucp-agent": {"profile": url}})
 
 
-OWNER_A = meta(PLATFORM_URL, "cust_a")
+def _through(key: str, customer: str | None = None) -> Caller:
+    return Caller(MERCHANT_PATH, merchant_headers(key, customer))
 
-STRANGERS = {
-    "Customer B on the same Platform": meta(PLATFORM_URL, "cust_b"),
-    "a guest on the same Platform": meta(PLATFORM_URL),
-    "a guest on another Platform": meta(OTHER_PLATFORM_URL),
-    "Customer A on another Platform": meta(OTHER_PLATFORM_URL, "cust_a"),
+
+CALLERS = {
+    "Customer A through the demo assistant": _through(KEY_A, "cust_a"),
+    "Customer B through the demo assistant": _through(KEY_A, "cust_b"),
+    "a guest of the demo assistant": _through(KEY_A),
+    "Customer A through another assistant": _through(KEY_OTHER, "cust_a"),
+    "a Platform on the public door": _platform(PLATFORM_URL),
+    "another Platform on the public door": _platform(OTHER_PLATFORM_URL),
 }
+
+OWNERS = ["Customer A through the demo assistant", "a Platform on the public door"]
+"""Who takes a turn as the owner; everyone else in `CALLERS` is a stranger to them."""
+
+OpenClient = Callable[[Caller], AbstractAsyncContextManager[Client]]
 
 Rule = Literal["not_found", "identity_required"]
 
@@ -88,11 +100,11 @@ class Resource:
     probes: list[Probe]
 
 
-async def outcome(client: Client, probe: Probe, caller: dict[str, Any], id: str) -> str:
+async def outcome(client: Client, probe: Probe, caller: Caller, id: str) -> str:
     """Everything the caller receives, as one canonical string: the result's text, or the error."""
-    call_meta = {**caller, "idempotency-key": str(uuid.uuid4())} if probe.idempotent else caller
+    meta = {**caller.meta, "idempotency-key": str(uuid.uuid4())} if probe.idempotent else caller.meta
     try:
-        result = await client.call_tool(probe.tool, {"meta": call_meta, **probe.arguments(id)})
+        result = await client.call_tool(probe.tool, {"meta": meta, **probe.arguments(id)})
     except MCPError as exc:
         error = exc.error
         return json.dumps({"error": [error.code, error.message, error.data]}, sort_keys=True)
@@ -111,22 +123,32 @@ def follows_rule(answer: str, rule: Rule) -> bool:
     return content["ucp"]["status"] == "error" and [m["code"] for m in content["messages"]] == ["not_found"]
 
 
-async def leaks(client: Client, resource: Resource) -> list[str]:
-    """Every way a stranger could tell Owner A's resource from one that never existed; empty is safe."""
+async def leaks(open_client: OpenClient, resource: Resource) -> list[str]:
+    """Every way a stranger could tell an owner's resource from one that never existed; empty is safe."""
     found: list[str] = []
-    id = await resource.create(client, OWNER_A)
-    before = await outcome(client, resource.read, OWNER_A, id)
-    for stranger, caller in STRANGERS.items():
-        for probe in resource.probes:
-            theirs = await outcome(client, probe, caller, id)
-            never_existed = await outcome(client, probe, caller, str(uuid.uuid4()))
-            if theirs != never_existed:
-                found.append(f"{probe.tool}: {stranger} gets {theirs} for A's id, {never_existed} otherwise")
-            elif not follows_rule(theirs, probe.rule):
-                found.append(f"{probe.tool}: {stranger} gets {theirs}, not {probe.rule}")
-    after = await outcome(client, resource.read, OWNER_A, id)
-    if after != before:
-        found.append(f"{resource.name}: the strangers changed A's data: {before} became {after}")
+    for owner_name in OWNERS:
+        owner = CALLERS[owner_name]
+        async with open_client(owner) as client:
+            id = await resource.create(client, owner.meta)
+            before = await outcome(client, resource.read, owner, id)
+        for stranger, caller in CALLERS.items():
+            if stranger == owner_name:
+                continue
+            async with open_client(caller) as client:
+                for probe in resource.probes:
+                    theirs = await outcome(client, probe, caller, id)
+                    never_existed = await outcome(client, probe, caller, str(uuid.uuid4()))
+                    if theirs != never_existed:
+                        found.append(
+                            f"{probe.tool}: {stranger} gets {theirs} for {owner_name}'s id, "
+                            f"{never_existed} otherwise"
+                        )
+                    elif not follows_rule(theirs, probe.rule):
+                        found.append(f"{probe.tool}: {stranger} gets {theirs}, not {probe.rule}")
+        async with open_client(owner) as client:
+            after = await outcome(client, resource.read, owner, id)
+        if after != before:
+            found.append(f"{resource.name}: strangers changed {owner_name}'s data: {before} became {after}")
     return found
 
 

@@ -18,6 +18,7 @@ from .catalog import (
     SimilarProduct,
     SuggestionSource,
 )
+from .merchant import MerchantKey, RegisteredPlatform
 
 __all__ = [
     "BundlePartner",
@@ -27,8 +28,10 @@ __all__ = [
     "EmbeddingState",
     "IdMatch",
     "IdempotencyKey",
+    "MerchantKey",
     "NewCartLine",
     "ProductEmbedding",
+    "RegisteredPlatform",
     "ResolvedProduct",
     "SimilarProduct",
     "StoredCart",

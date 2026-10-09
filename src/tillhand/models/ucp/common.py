@@ -8,6 +8,7 @@ Two model bases, on purpose:
 Serialise every outgoing payload with `ucp_dump`.
 """
 
+import json
 from typing import Annotated, Any, Literal, Self
 from urllib.parse import urlsplit
 
@@ -236,8 +237,28 @@ class ProtocolErrorData(Closed):
     """`error.data` of a JSON-RPC `-32000` protocol error, e.g. a reused idempotency key or a 503."""
 
     code: str
+    content: str | None = None
     retry_after: Annotated[int, Field(ge=0)] | None = None
     """Seconds to wait before retrying (UCP: `error.data.retry_after` for 429 and 503)."""
+
+
+class JsonRpcError(Closed):
+    code: int
+    message: str
+    data: ProtocolErrorData | None = None
+
+
+class JsonRpcErrorResponse(Closed):
+    """A JSON-RPC error sent before MCP reads the request (`transports/jsonrpc.json#/$defs/error_response`),
+    e.g. the Merchant door's 401. The id is `null`: the request was never read."""
+
+    jsonrpc: Literal["2.0"] = "2.0"
+    id: None = None
+    error: JsonRpcError
+
+    def body(self) -> bytes:
+        # `id` must be present as null, which `ucp_dump`'s exclude_none would drop.
+        return json.dumps({"jsonrpc": self.jsonrpc, "id": None, "error": ucp_dump(self.error)}).encode()
 
 
 class ErrorResponse(Closed):
