@@ -1,6 +1,6 @@
 # Payments architecture
 
-**Status:** decided in [#30](https://github.com/HarshilForWork/TillMan/issues/30) (4 Oct 2026) and [#16](https://github.com/HarshilForWork/TillMan/issues/16) (10 Oct 2026, the UPI handler, §11). Where older sections say "link", read the attempt's **pay page** (§11.2); Razorpay Payment Links are only the fallback. It's a living document: [#16](https://github.com/HarshilForWork/TillMan/issues/16) (the payment handler) and [#17](https://github.com/HarshilForWork/TillMan/issues/17) (payments in the eval suite) extend it when they're decided. Anything still open is marked **⏳ #N**.
+**Status:** decided in [#30](https://github.com/HarshilForWork/TillMan/issues/30) (4 Oct 2026) and [#16](https://github.com/HarshilForWork/TillMan/issues/16) (10 Oct 2026, the UPI handler, §11), and **built in [#51](https://github.com/HarshilForWork/TillMan/issues/51) (10 Oct 2026; what was built and every build decision are in §15)**. Where older sections say "link", read the attempt's **pay page** (§11.2); Razorpay Payment Links are only the fallback. It's a living document: [#16](https://github.com/HarshilForWork/TillMan/issues/16) (the payment handler) and [#17](https://github.com/HarshilForWork/TillMan/issues/17) (payments in the eval suite) extend it when they're decided. Anything still open is marked **⏳ #N**.
 **Short form:** ADR-0007. **Terms:** `CONTEXT.md`. **Spec:** UCP `2026-08-25`. **PSP:** Razorpay, test mode.
 
 ---
@@ -312,9 +312,9 @@ UPDATE payment_intents
 
 1. **Short transactions, database statements only.** No HTTP call, no Razorpay call and no embedding call ever happens while a transaction or connection is held (I7).
 2. **The `complete_checkout` shape:** **T1** (lock Variant rows, check stock minus Holds, insert Hold, insert PaymentIntent `created`, Checkout → `complete_in_progress`, store the idempotency key) → **commit** → **call Razorpay** (create order and link, with a timeout) → **T2** (PaymentIntent → `issued`, store the link). If the Razorpay call fails: **T2'** (PaymentIntent → `failed`, release the Hold, Checkout → `ready_for_complete`, plus a recoverable message).
-3. **The crash window between the Razorpay call and T2:** the PaymentIntent is left `created` with a known `receipt`. Reconciliation looks it up by its receipt or reference id, and adopts or cancels it. ⏳ **#16 build:** confirm the Razorpay lookup by receipt / `reference_id`.
+3. **The crash window between the Razorpay call and T2:** the PaymentIntent is left `created` with a known `receipt`. Reconciliation looks it up by its receipt (`GET /v1/orders?receipt=`) and adopts it (`issued`), or, after 30 s with no such order, marks it `failed` (`upstream_timeout`). ✅ Built in #51 (§15, B5).
 4. **Isolation:** Postgres's default READ COMMITTED is enough, because correctness comes from `FOR UPDATE` row locks, conditional updates and unique constraints, not from the isolation level.
-5. **Lock ordering:** when a Checkout has several Variants, lock their rows **in a fixed order (by id)**, so two Checkouts sharing Variants can't deadlock.
+5. **Lock ordering:** when a Checkout has several Variants, lock their rows **in a fixed order (by id)**, so two Checkouts sharing Variants can't deadlock. **And one order across tables (#51): the Checkout row, then its attempts, then the Variants.** `complete_checkout` and `cancel_checkout` lock the Checkout and then touch its attempt; a capture or a failure used to lock the attempt first, so the two could deadlock on one Checkout. Every path now locks through `_lock_attempt` (§15, B8).
 6. **Row-Level Security (#45, ADR-0009):** every payment table that holds owned rows (`checkouts`, `payment_intents`, `holds`, `orders`, `order_events`) ships an RLS policy in the migration that creates it. Agent requests run as their `Owner`. **The webhook receiver and the reconcile script run as `System("razorpay_webhook")` / `System("reconcile")`**, the only paths allowed to touch any Customer's rows, because a payment confirmation belongs to no caller. This is a third, database-enforced isolation layer under the `Owner` type and the isolation tests.
 
 ---
@@ -327,15 +327,18 @@ UPDATE payment_intents
 |---|---|---|
 | `carts` ✅ #50 | id (random UUID), owner_platform, owner_customer (null = guest), currency, created_at, updated_at, expires_at | Every lookup is by id **and** owner; an expired row is simply not found |
 | `cart_lines` ✅ #50 | cart_id, position, variant_id, quantity; **no price** (every read joins the live catalog) | PK (cart_id, position); unique (cart_id, variant_id); cascade on Cart delete; no FK to `variants`, so a Variant removed by a re-seed is reported, not silently lost |
-| `checkouts` | id, cart_id, owner, status, line snapshot, totals, expires_at, last_reconciled_at | Partial unique index: **one incomplete Checkout per cart_id**; status trigger |
-| `payment_intents` | id, checkout_id, attempt_no, receipt, razorpay_order_id, window_ends_at, status, timestamps | Unique (checkout_id, attempt_no); unique receipt; status trigger |
-| `holds` | id, payment_intent_id, variant_id, qty, expires_at, outcome (null / converted / released) | Index on (variant_id, expires_at) where outcome is null, for the availability query |
-| `orders` | id, checkout_id, owner, line snapshot, totals, payment_intent_id, flags | Unique checkout_id (one Order per Checkout) |
+| `checkouts` ✅ #51 | id, owner_platform, owner_customer, cart_id (null once its Cart is cleared), status, currency, buyer_first_name / last_name / email / phone, created_at, updated_at, expires_at, last_reconciled_at | Partial unique index on cart_id where status not in (completed, canceled): **one active Checkout per Cart**; forward-only status trigger |
+| `checkout_lines` ✅ #51 | checkout_id, position, variant_id, title, unit_price, quantity: **the snapshot** | PK (checkout_id, position); unique (checkout_id, variant_id); replaced whole by `update_checkout` |
+| `payment_intents` ✅ #51 | id, checkout_id, attempt, receipt, amount, currency, instrument_id, status, razorpay_order_id, razorpay_payment_id, failure_code, window_ends_at, created_at, updated_at, captured_at | Unique (checkout_id, attempt); unique receipt (≤ 40 chars); unique razorpay_order_id; forward-only status trigger |
+| `payment_intent_lines` ✅ #51 | payment_intent_id, position, variant_id, title, unit_price, quantity: **what this attempt charges for** | Written in T1, never changed; the Order is made from these (§15, B3) |
+| `holds` ✅ #51 | id, payment_intent_id, variant_id, quantity, expires_at, outcome (null / converted / released) | Index on (variant_id, expires_at) where outcome is null; unique (payment_intent_id, variant_id); read across owners only through `held_stock` (§15, B2) |
+| `orders` ✅ #51 (minimal) | id, owner_platform, owner_customer, checkout_id, payment_intent_id, currency, total, late_payment, oversold, duplicate_payment, created_at | Unique checkout_id (one Order per Checkout); a trigger lets only the flags change, and only from false to true |
+| `order_lines` ✅ #51 | order_id, position, variant_id, title, unit_price, quantity | Copied from the captured attempt's lines |
 | `order_events` | order_id, kind (fulfilment / adjustment), payload, created_at | Append-only |
 | `webhook_events` | event_id (PK), type, payload, received_at, applied | Append-only; the PK is the dedupe key |
 | `idempotency_keys` ✅ #50 | id, key, owner_platform, owner_customer (null = guest), operation, request_hash, response (text, exactly as sent), created_at | `unique nulls not distinct (key, owner_platform, owner_customer, operation)`, so a guest's key is as unique as a Customer's; rows older than 48 h are ignored, and each write sweeps up to 100 of them |
 
-The **availability query** is `stock - coalesce(sum(qty) filter (where outcome is null and expires_at > now()), 0)`. Untracked Variants (stock is null) skip it entirely.
+The **availability query** is `stock - coalesce(sum(qty) filter (where outcome is null and expires_at > now()), 0)`. Untracked Variants (stock is null) skip it entirely. As built it's `stock - held_stock(variant_ids)`, a function that counts **every owner's** active Holds and returns only a total per Variant (§15, B2).
 
 ---
 
@@ -529,12 +532,14 @@ UCP requires a handler to map its failures to standard errors (`payment/guide.md
 | The UPI payment failed | Wrong PIN; the bank declined | `payment_failed` | `recoverable` → offer a retry |
 | The approval window ran out | Never opened the page | `payment_failed`, detail `approval_expired` | `recoverable` → offer a retry |
 | Razorpay slow or down when the order is created | A timeout at `razorpay.create_order` | `upstream_timeout` (custom, per #9) | `recoverable` → try again shortly |
-| Out of stock at completion | Someone else holds the last unit | `out_of_stock` | `requires_buyer_input` → choose something else |
-| Amount outside the handler's limits | Above the configured maximum | `payment_failed`, detail `amount_out_of_range` | `requires_buyer_input` → change the Cart |
+| Out of stock at completion | Someone else holds the last unit | `out_of_stock` | `recoverable` → choose something else (corrected in #51, see below) |
+| Amount outside the handler's limits | Above the configured maximum | `payment_failed`, detail `amount_out_of_range` | `recoverable` → change the Cart (corrected in #51) |
 | Under 2 min left on the Checkout | Completed at 15:59 | `checkout_expiring` (custom) | `recoverable` → start a new Checkout |
 | The agent sent a credential, or the wrong instrument type | A card token sent to the UPI handler | `invalid_instrument` (custom) | `unrecoverable` for that request → fix the call |
 
 This table goes into the published handler spec, and every row gets a test.
+
+**Corrected while building #51:** the two rows above said `requires_buyer_input`. UCP's checkout spec says a `requires_*` severity "contributes to `status: requires_escalation`" and means a hand-off through `continue_url`, and that standard errors such as `out_of_stock` SHOULD be `recoverable` (`checkout/index.md`, "Error Handling", "Standard Errors"). We never hand off (ADR-0008), and the agent fixes both in band with `update_checkout`, so both are `recoverable`.
 
 ### 11.9 Decision H7: no mode-specific code; test vs live is a key and a page
 
@@ -700,13 +705,16 @@ So a payment window never outlives its Checkout. At 15:55 on a Checkout expiring
 **Q35. How does an agent know what to do when a payment fails?**
 Every failure is a normal result with a standard UCP code and a **severity**:
 - `recoverable` means retry (`payment_failed`, `upstream_timeout`, `checkout_expiring`);
-- `requires_buyer_input` means ask the human (`out_of_stock`, an amount out of range);
+- `recoverable` also covers what the agent fixes by changing the Checkout with the human (`out_of_stock`, an amount out of range; UCP keeps `requires_*` for hand-offs, which we never do);
 - `unrecoverable` means fix the request (`invalid_instrument`).
 
 The mapping is a MUST in UCP's handler guide, and it's published in our handler spec.
 
 **Q36. Did you ever run this with real money? How do you know it works live?**
 No: test mode only, by design (real money is out of scope). Nothing in our code branches on the mode. Razorpay's widget shows a test UPI-id box in test mode and a QR code or UPI-app chooser live, and the mode is only which keys are configured. What changes for a real Merchant is configuration: live keys, live webhooks, and allowlisting the pay page's domain. The state machine, webhooks and invariants are the same, and are covered by a fake Razorpay that can capture, fail, duplicate and reorder on command.
+
+**Q37. Could this serve US shoppers paying by card?**
+Not today, by choice (#56): India-first, because nobody has bridged UPI and UCP, while US card checkout is solved and ~99% of UCP storefronts are Shopify's. The design leaves room, though. UCP lets a Merchant list several handlers, so a card handler (e.g. via Google Pay tokens or Stripe, which holds the PCI scope) would be an **addition**. The Checkout state machine already has the **synchronous** path a card needs (`ready_for_complete → completed`, §3.1). Currency is one per Merchant and never hard-coded. So US support is a second handler plus a currency, not a redesign. The other missing pieces are Platform onboarding (Merchant Center, Copilot feeds), and ACP for ChatGPT.
 
 ---
 
@@ -722,3 +730,72 @@ No: test mode only, by design (real money is out of scope). Nothing in our code 
   - `signatures.md`: idempotency storage rules 826-848;
   - `schemas/shopping/checkout.json`: the 6 h TTL, 117-121.
 - **Razorpay:** `docs/payments/payments.md` (payment states), `docs/payments/orders.md` and `docs/api/orders/entity.md` (order states, attempts), `docs/webhooks/payments.md` (failed-then-captured), `docs/payments/payments/late-authorisation.md`, `docs/payments/payments/capture-settings.md`, `docs/webhooks/best-practices.md` (5 s, 24 h, dedupe), `docs/payments/payment-links/states.md`.
+
+---
+
+## 15. As built (#51, 10 Oct 2026)
+
+**What exists.** The five checkout tools, the payment-attempt lifecycle and the pay page, over seven new tables (§8) with Row-Level Security from the first migration (#59, built inside #51). Razorpay is faked in every offline test; the real client is written and tested against a mock transport, and waits for test keys (#2) for its first real call.
+
+| Piece | Where | What it does |
+|---|---|---|
+| Migration `0004` | `migrations/versions/0004_row_level_security.py` | The `tillhand_app` role (no login yet), its grants, `tillhand_sees()`, and RLS on `carts`, `cart_lines`, `idempotency_keys` |
+| Migration `0005` | `migrations/versions/0005_checkouts.py` | The seven payment tables, the forward-only triggers, the Orders-only-gain trigger, `held_stock()`, RLS on every one |
+| The scope helper | `integrations/neon/scope.py` | `scoped` / `owned_transaction` / `system_transaction`: the only code that sets `app.owner_*` and `app.system` |
+| The checkout SQL | `integrations/neon/checkouts.py` | T1 (`begin_attempt`), T2 (`finish_attempt`), T2' (`fail_attempt`), the transition function (`record`, with `_capture`), cancel, the pay page's read |
+| Idempotency SQL | `integrations/neon/idempotency.py` | Shared by `cancel_cart`, `complete_checkout` and `cancel_checkout` |
+| Razorpay | `integrations/razorpay/client.py` | REST over our `httpx2` client: create an order, an order's payments, orders by receipt |
+| The service | `services/checkouts.py` | The five tools, reconcile-on-read, the retry pre-check, `observe()` (what Razorpay's payments mean), rendering to UCP |
+| The tools | `api/mcp/checkouts.py` | Under their UCP names, owner-scoped, with `readOnlyHint` / `idempotentHint` |
+| The pay page | `api/routes/pay.py` | `/pay/{attempt}`: Razorpay's widget for the current, payable attempt; refuses everything else |
+
+### 15.1 Build decisions, with the alternatives rejected
+
+| # | Decision | Why | Rejected |
+|---|---|---|---|
+| **B1** | **Razorpay's REST API through our `httpx2` client, not its Python SDK** | No SDK is a dependency; one pooled HTTP client per process; typed errors (`RazorpayUnavailable` vs `RazorpayRefused`) instead of the SDK's bare strings; no thread hop. Three endpoints are all we need | The SDK through `asyncio.to_thread` (what #51's text said): a thread per call, `requests` as a second HTTP library, errors we can't tell apart |
+| **B2** | **`held_stock(variant_ids)`**, a plpgsql function that sets `app.system` for its one query and puts the caller's scope back, returning only a total per Variant | Stock is shared: RLS would otherwise hide other owners' Holds, and the stock check would oversell. Only sums leave the function, never a row | A `set app.system` clause on the function (Postgres 15+ refuses it to a non-superuser; that's what Neon's admin is, found when the migration failed); `SECURITY DEFINER` (counts wrong the day the owner loses `BYPASSRLS`); a select-everything policy on `holds` (every owner could read every Hold) |
+| **B3** | **Each attempt freezes its own lines** (`payment_intent_lines`); a capture orders exactly those | After a failed attempt the Checkout can be updated; a late capture of the old attempt must order what was paid for, at what was paid. Found by the code review | Building the Order from the Checkout's current lines (the bug: wrong goods, a total that doesn't match the money); forbidding updates once any attempt exists (UCP allows updates in `ready_for_complete`) |
+| **B4** | **A capture supersedes every other open attempt** on its Checkout, and **the pay page refuses unless the Checkout is `complete_in_progress`** | A late payment of attempt 1 completes the Checkout; attempt 2 must stop taking money (I3). Found by the code review | Leaving attempt 2 open until its window ends (a second charge, then `duplicate_payment`) |
+| **B5** | **The idempotency row is written in T1 with no response; T2 or T2' fills it in.** A replay that finds no response yet answers the Checkout's current state | The key commits with the effect (I8), and no connection is held across Razorpay (I7). The pay-page URL comes from the attempt id, so the in-flight answer carries the same link | Storing the key only in T2 (a crash between T1 and T2 would let a retry start a second attempt); one transaction around the Razorpay call (breaks I7) |
+| **B6** | **A keyed call checks its key before anything else**, Razorpay included | A lost response must be recoverable while Razorpay is slow. Found by the code review | Asking Razorpay about the previous attempt first (a same-key retry failed whenever Razorpay was down) |
+| **B7** | **`receipt = {the Checkout id as 32 hex digits}-{attempt}`** (≤ 36 characters) | Unique across all Checkouts by construction | The first 8 characters of the id (§3.2's sketch): random 32-bit prefixes collide by the birthday bound after about 77,000 Checkouts, and the insert would fail |
+| **B8** | **One lock order:** the Checkout row, then its attempts, then Variants by id (`_lock_attempt`) | T1 and cancel lock the Checkout then the attempt; capture and T2' locked the attempt first. Opposite orders on one Checkout can deadlock | Relying on Postgres to detect deadlocks (it does, by aborting one: a failed webhook or tool call) |
+| **B9** | **Capture is exactly-once by its conditional `UPDATE … WHERE status <> 'captured'`**; `webhook_events` comes with the webhook receiver (#52) | A repeat matches no row, so its stock decrement and Order never run. Reconcile-on-read has no event id anyway | Building `webhook_events` here with no receiver to write it |
+| **B10** | **Orders are minimal here** (lines, total, flags); #53 adds fulfilment events, adjustments and `get_order` | The capture transaction must create one, and it lives in the transition function #51 needs | Waiting for #53 (no purchase could finish) |
+| **B11** | **`out_of_stock` and `amount_out_of_range` are `recoverable`** | UCP's rules (§11.8) | `requires_buyer_input` (§11.8's first draft) |
+| **B12** | **`continue_url` only once a pay page exists** (`complete_in_progress`) | UCP says SHOULD for the other active statuses, and we have no page to send anyone to before then | A URL to a page that doesn't exist |
+| **B13** | **Time budget: one Razorpay call is 3 s; the pre-checks in `complete_checkout` and `cancel_checkout` try once; reads retry once** | Two calls of 3 s plus the short transactions fit the 10 s tool deadline. Before the review, a retried read plus order creation could overrun it, leaving an attempt `created` | A longer tool deadline for checkout (the Harness waits 15 s per call) |
+| **B14** | **Reconcile-on-read is throttled to every 30 s, whether or not the window has ended** | Agents poll every few seconds; after the window, every poll was costing two Razorpay calls. Found by the code review | Asking Razorpay on every read once the window ends |
+| **B15** | **"Latest payment" is by `created_at`**, never by list position | Razorpay doesn't promise an order, and a fresh try pending after an old failure must be a wait, not a failure. Found by the code review | `payments[-1]` |
+| **B16** | **A line nothing matched, or whose Variant has left the catalog, keeps the Checkout `incomplete`**, with a `not_found` message | Paying for only what was found charges for less than the Customer asked for. Found by the code review | Dropping it and staying `ready_for_complete` |
+| **B17** | **The pay page reads as `System("pay_page")`**, judges the window by the database's clock, and answers 503 with the step when Neon is slow | A browser carries no Owner; the window is checked in SQL by `now()`, so the page uses the same clock; CLAUDE.md's rule that every endpoint fails with a reason | The process's clock (two clocks for one window); a bare 500 |
+| **B18** | **`idempotentHint`** on `update_cart`, `cancel_cart`, `update_checkout`, `complete_checkout`, `cancel_checkout`; `get_checkout` is `readOnlyHint` | #40 decision 2: the Harness retries reads plus idempotent writes. `get_checkout` may record what Razorpay says, but that only catches up with what already happened | A list of retryable tools in the Harness |
+| **B19** | **A bad instrument, or no Razorpay keys, is answered before the key is stored**, like a malformed call | They depend only on the request and the deployment, so a retry gets the same answer anyway | Storing them under the key (a fixed instrument would then need a new key) |
+| **B20** | **`create_checkout` takes a `cart_id` or `line_items`** | UCP's base Checkout is made from line items; a Platform that never negotiated Carts still works | Cart only |
+
+### 15.2 Measured and verified
+
+- **The extra round trip of RLS** (`set_config` at the start of every owned transaction): **median 58 ms from the development laptop to Neon** (one network round trip from India). Next to Neon (Railway in the same region) it's a few milliseconds, as ADR-0009 expected. Folding it into the first statement is a possible optimisation (#38).
+- **Live against Neon** (`TILLHAND_NEON_TESTS=1`): the purchase from Hold to capture, a duplicate capture changing nothing, **two buyers racing for the last unit (one Hold, one `out_of_stock`)**, an expired Hold no longer counting, the triggers refusing a hand-typed backward `UPDATE`, a key replaying in flight and then with its response, `held_stock` counting another owner's Hold while the Hold itself stays invisible, one active Checkout per Cart under two concurrent creates, a late capture after an update ordering what was paid for and closing the newer attempt, and the RLS guard (every owned table enabled, forced and with a policy; it notices a dropped one).
+- **Not yet:** a real Razorpay test-mode payment (needs #2's keys), and the server running as `tillhand_app` (needs the owner to give it a login).
+
+### 15.3 Interview questions this build added
+
+**Q37. Your RLS hides other owners' rows. How does the stock check see other people's Holds?**
+Through one function, `held_stock`, which marks its single query as a system path, counts every active Hold for the Variants asked about, restores the caller's scope, and returns only a number per Variant. No row crosses the boundary. We found that the obvious way (a `SET` clause on the function) needs a superuser on Postgres 15+, and that `SECURITY DEFINER` would silently undercount if the owner ever lost `BYPASSRLS`, which would oversell.
+
+**Q38. Why does each attempt keep its own copy of the lines?**
+Because the Checkout can change after an attempt fails, and that failed attempt can still be paid days later. The Order must be what the money paid for. The review caught us building it from the Checkout's current lines.
+
+**Q39. How did you avoid deadlocks between a webhook and a retry?**
+One lock order for every path: the Checkout row, then its attempts, then the Variant rows by id. The payment-confirmation path used to lock the attempt first, the opposite of `complete_checkout`, which is the textbook deadlock.
+
+**Q40. Why not the Razorpay SDK?**
+It's synchronous, so every call would need a thread; it brings a second HTTP library; and it collapses errors into strings, so "Razorpay is down" and "you sent a bad request" look the same. We need three endpoints, so a small typed client over our one async HTTP client is less code and more correct.
+
+**Q41. A retry with the same key arrives while Razorpay is down. What happens?**
+It gets the stored answer. Keyed calls check their key before any outside call, so recovering a lost response never depends on Razorpay being up.
+
+**Q42. What did the code review find?**
+Nine real issues before anything shipped, plus one duplicated helper: a late capture leaving the newer attempt payable; an Order built from the wrong lines; a wrong assumption about the order of Razorpay's payment list; a time budget that could overrun the tool deadline; a same-key retry blocked by a slow Razorpay; unknown lines, and lines whose Variant had left the catalog, being paid without; the pay page answering a bare 500 when Neon was slow; and unthrottled reconciliation after the window. Rereading the SQL afterwards found a tenth: two paths locking the same two rows in opposite orders (B8). Each has a test now. The lesson: the invariants were right, but every path that touches money needs the question "what if this arrives late, twice, or out of order?"
